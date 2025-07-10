@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>최종 복구</title>
+    <title>세션 최고 기록</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000; }
         canvas { display: block; cursor: none; }
@@ -33,11 +33,14 @@
             initialX: 200,
             initialY: 0,
         };
-        const playerHitbox = { width: player.radius * 1.5, height: player.radius * 2 };
         const camera = { x: 0, y: 0 };
         
         let worldObjects = [];
         let goal;
+
+        // 최고 기록 관련 변수 (세션 동안만 유지)
+        let highestX = 0;
+        let recordPlatform = null;
 
         const bgCanvas = document.createElement('canvas');
         const bgCtx = bgCanvas.getContext('2d');
@@ -52,7 +55,6 @@
         const playerTextureCanvas = document.createElement('canvas'); const pTextureCtx = playerTextureCanvas.getContext('2d'); playerTextureCanvas.width = PLAYER_TEXTURE_SIZE; playerTextureCanvas.height = PLAYER_TEXTURE_SIZE;
         function createPlayerNoiseTexture() { const imageData = pTextureCtx.createImageData(PLAYER_TEXTURE_SIZE, PLAYER_TEXTURE_SIZE); const data = imageData.data; for (let i = 0; i < data.length; i += 4) { const shade = Math.random() < 0.5 ? 0 : 255; data[i] = shade; data[i+1] = shade; data[i+2] = shade; data[i+3] = 255; } pTextureCtx.putImageData(imageData, 0, 0); }
         
-        // ✨ 안정적인 충돌 로직으로 복원
         function updatePlayer() {
             if (keys['keya'] || keys['arrowleft']) { player.dx -= PLAYER_ACCEL; player.rotationAngle -= 0.05; }
             if (keys['keyd'] || keys['arrowright']) { player.dx += PLAYER_ACCEL; player.rotationAngle += 0.05; }
@@ -61,45 +63,52 @@
             player.dx *= FRICTION;
             if (Math.abs(player.dx) < 0.1) player.dx = 0;
             if (Math.abs(player.dx) > MAX_SPEED) player.dx = Math.sign(player.dx) * MAX_SPEED;
-            
             player.dy += GRAVITY;
 
             const physicalObjects = worldObjects.filter(o => o.isPhysical);
-            
+
             player.worldX += player.dx;
             for (const p of physicalObjects) {
-                const rectHitbox = { x: player.worldX - playerHitbox.width / 2, y: player.worldY - playerHitbox.height / 2, width: playerHitbox.width, height: playerHitbox.height };
-                if (rectHitbox.x < p.worldX + p.width && rectHitbox.x + rectHitbox.width > p.worldX &&
-                    rectHitbox.y < p.worldY + p.height && rectHitbox.y + rectHitbox.height > p.worldY) {
-                    if (player.dx > 0) {
-                        player.worldX = p.worldX - playerHitbox.width / 2;
-                    } else if (player.dx < 0) {
-                        player.worldX = p.worldX + p.width + playerHitbox.width / 2;
-                    }
+                if (checkCollision(player, p).colliding) {
+                    if (player.dx > 0) player.worldX = p.worldX - player.radius;
+                    else if (player.dx < 0) player.worldX = p.worldX + p.width + player.radius;
                     player.dx = 0;
                 }
             }
-
+            
             player.worldY += player.dy;
             player.onGround = false;
             for (const p of physicalObjects) {
-                const rectHitbox = { x: player.worldX - playerHitbox.width / 2, y: player.worldY - playerHitbox.height / 2, width: playerHitbox.width, height: playerHitbox.height };
-                 if (rectHitbox.x < p.worldX + p.width && rectHitbox.x + rectHitbox.width > p.worldX &&
-                     rectHitbox.y < p.worldY + p.height && rectHitbox.y + rectHitbox.height > p.worldY) {
+                if (checkCollision(player, p).colliding) {
                     if (player.dy > 0) {
-                        player.worldY = p.worldY - playerHitbox.height / 2;
+                        player.worldY = p.worldY - player.radius;
                         player.onGround = true;
                         player.dy = 0;
-                        if (p.angle) player.dx += p.angle * 0.3; 
                     } else if (player.dy < 0) {
-                        player.worldY = p.worldY + p.height + playerHitbox.height / 2;
+                        player.worldY = p.worldY + p.height + player.radius;
                         player.dy = 0;
                     }
                 }
             }
             
+            // 최고 기록 갱신 로직
+            if (player.worldX > highestX) {
+                highestX = player.worldX;
+                // ✨ localStorage 저장 코드 삭제
+                updateRecordPlatform(); 
+            }
+
             if (player.worldX > goal.x) { alert("신호의 끝에 도달했습니다."); init(); }
             if (player.worldY > height + 200) resetPlayer();
+        }
+
+        function checkCollision(playerObj, platformObj) {
+            const closestX = Math.max(platformObj.worldX, Math.min(playerObj.worldX, platformObj.worldX + platformObj.width));
+            const closestY = Math.max(platformObj.worldY, Math.min(playerObj.worldY, platformObj.worldY + platformObj.height));
+            const distanceX = playerObj.worldX - closestX;
+            const distanceY = playerObj.worldY - closestY;
+            const distanceSquared = (distanceX * distanceX) + (distanceY * distanceY);
+            return { colliding: distanceSquared < (playerObj.radius * playerObj.radius) };
         }
         
         function resetPlayer() { player.worldX = player.initialX; player.worldY = player.initialY; player.dx = 0; player.dy = 0; }
@@ -118,59 +127,103 @@
                 if (screenX + obj.width*1.5 < 0 || screenX - obj.width*0.5 > width || screenY + obj.height*1.5 < 0 || screenY - obj.height*0.5 > height) return;
                 
                 ctx.save();
-                
-                ctx.translate(screenX + obj.width/2, screenY + obj.height/2);
-                ctx.rotate(obj.angle || 0);
-                ctx.translate(-(screenX + obj.width/2), -(screenY + obj.height/2));
-
                 ctx.beginPath();
-                if (obj.shape === 'rect') { ctx.rect(screenX, screenY, obj.width, obj.height); } 
-                else if (obj.shape === 'circle') { ctx.arc(screenX + obj.width/2, screenY + obj.height/2, obj.width/2, 0, Math.PI * 2); }
+                ctx.moveTo(screenX, screenY);
+                ctx.lineTo(screenX + obj.width, screenY);
+                ctx.lineTo(screenX + obj.width, screenY + obj.height);
+                ctx.arc(screenX + obj.width / 2, screenY + obj.height, obj.width / 2, 0, Math.PI, false);
+                ctx.closePath();
                 ctx.clip();
                 
-                ctx.rotate(-(obj.angle || 0));
-
                 ctx.translate(-(camera.x % 1024), -(camera.y % 1024));
                 ctx.fillStyle = bgPattern;
-                ctx.fillRect(camera.x % 1024 - (screenX + obj.width/2), camera.y % 1024 - (screenY + obj.height/2), width * 2, height * 2);
+                ctx.fillRect(camera.x % 1024, camera.y % 1024, width, height);
                 ctx.restore();
             });
+        }
+        
+        function drawRecordFlag(time) {
+            if (!recordPlatform) return;
+
+            const flagWidth = 40;
+            const flagHeight = 25;
+            const poleHeight = 50;
+            const platformCenterX = recordPlatform.worldX + recordPlatform.width / 2;
+            const platformTopY = recordPlatform.worldY;
+            const screenPoleX = Math.floor(platformCenterX - camera.x);
+            const screenPoleTopY = Math.floor(platformTopY - poleHeight - camera.y);
+            const screenPlatformTopY = Math.floor(platformTopY - camera.y);
+
+            if (screenPoleX + flagWidth < 0 || screenPoleX > width) return;
+
+            ctx.strokeStyle = '#FFFFFF';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(screenPoleX, screenPlatformTopY);
+            ctx.lineTo(screenPoleX, screenPoleTopY);
+            ctx.stroke();
+
+            const imageData = ctx.createImageData(flagWidth, flagHeight);
+            const data = imageData.data;
+            for (let y = 0; y < flagHeight; y++) {
+                for (let x = 0; x < flagWidth; x++) {
+                    const shade = getFlowingNoiseValue(x, y, time * 1.5);
+                    const index = (y * flagWidth + x) * 4;
+                    data[index] = shade; data[index+1] = shade; data[index+2] = shade; data[index+3] = 255;
+                }
+            }
+            ctx.putImageData(imageData, screenPoleX, screenPoleTopY);
         }
 
         function drawGoal(time) { const screenX = Math.floor(goal.x - camera.x); const screenY = Math.floor(goal.y - camera.y); if (screenX + goal.width < 0 || screenX > width) return; const imageData = ctx.createImageData(goal.width, goal.height); const data = imageData.data; for(let y = 0; y < goal.height; y++) { for(let x = 0; x < goal.width; x++) { const shade = getFlowingNoiseValue(x, y, time); const index = (y * goal.width + x) * 4; data[index] = shade; data[index+1] = shade; data[index+2] = shade; data[index+3] = 255; } } ctx.putImageData(imageData, screenX, screenY); }
         function drawPlayer() { const screenX = width / 2; const screenY = height / 2; ctx.save(); ctx.beginPath(); ctx.arc(screenX, screenY, player.radius, 0, Math.PI * 2); ctx.clip(); ctx.translate(screenX, screenY); ctx.rotate(player.rotationAngle); ctx.drawImage(playerTextureCanvas, -PLAYER_TEXTURE_SIZE / 2, -PLAYER_TEXTURE_SIZE / 2); ctx.restore(); }
 
         let lastTime = 0;
-        function animate(time) { if(!lastTime) lastTime = time; updatePlayer(); camera.x = player.worldX - (width / 2); camera.y = player.worldY - (height / 2); renderWorld(); drawGoal(time / 100); drawPlayer(); requestAnimationFrame(animate); }
+        function animate(time) {
+            if(!lastTime) lastTime = time;
+            updatePlayer();
+            camera.x = player.worldX - (width / 2);
+            camera.y = player.worldY - (height / 2);
+            renderWorld();
+            drawRecordFlag(time / 100);
+            drawGoal(time / 100);
+            drawPlayer();
+            requestAnimationFrame(animate);
+        }
 
         function createBackgroundPattern() { const pS = 1024; bgCanvas.width=pS; bgCanvas.height=pS; const iD = bgCtx.createImageData(pS, pS); const d = iD.data; for(let i=0; i<d.length; i+=4) { const s = getStaticNoiseValue(i % pS, Math.floor(i / pS)); d[i]=s; d[i+1]=s; d[i+2]=s; d[i+3]=255; } bgCtx.putImageData(iD, 0, 0); bgPattern = ctx.createPattern(bgCanvas, 'repeat'); }
+
+        function updateRecordPlatform() {
+            const physicalPlatforms = worldObjects.filter(o => o.isPhysical);
+            let bestPlatform = null;
+            for (const p of physicalPlatforms) {
+                if (p.worldX <= highestX) { bestPlatform = p; } 
+                else { break; }
+            }
+            recordPlatform = bestPlatform;
+        }
 
         function init() {
             width = canvas.width = window.innerWidth; height = canvas.height = window.innerHeight;
             player.initialY = height - 200;
+            
+            // ✨ localStorage에서 불러오는 대신, 항상 0으로 초기화
+            highestX = 0;
+            
             resetPlayer();
 
             const platforms = [];
-            const shapes = ['rect', 'circle'];
             let currentX = 100;
             let currentY = height - 100;
             
             platforms.push({ worldX: 100, worldY: height - 100, width: 250, height: 40, isPhysical: true, shape: 'rect', angle: 0 });
 
             for (let i=0; i < 50; i++) {
-                const shape = shapes[Math.floor(Math.random() * shapes.length)];
                 const xGap = 180 + Math.random() * 150; 
                 const yGap = (Math.random() - 0.5) * 220;
-                let platformWidth, platformHeight, platformAngle = 0;
-                
-                if (shape === 'rect') {
-                    platformWidth = 80 + Math.random() * 120;
-                    platformHeight = 20;
-                    platformAngle = (Math.random() - 0.5) * 0.6;
-                } else if (shape === 'circle') {
-                    platformWidth = 80 + Math.random() * 100;
-                    platformHeight = platformWidth;
-                }
+                let platformWidth = 80 + Math.random() * 120;
+                let platformHeight = 20;
+                let platformAngle = 0; 
                 
                 currentX += xGap;
                 currentY += yGap;
@@ -181,7 +234,7 @@
                 platforms.push({
                     worldX: currentX, worldY: currentY,
                     width: platformWidth, height: platformHeight,
-                    isPhysical: true, shape: shape, angle: platformAngle
+                    isPhysical: true, shape: 'rect', angle: platformAngle
                 });
             }
 
@@ -192,6 +245,8 @@
             
             goal = { x: currentX + 500, y: 0, width: 50, height: height * 2 };
             
+            updateRecordPlatform();
+            
             if (!bgPattern) createBackgroundPattern();
             createPlayerNoiseTexture();
         }
@@ -199,6 +254,5 @@
         window.addEventListener('resize', init);
         init();
         animate(0);
-    </script>
-</body>
+    </script></body>
 </html>
