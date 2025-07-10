@@ -11,8 +11,7 @@
 <body>
     <canvas id="mainCanvas"></canvas>
     <script>
-    // GitHub에서 정상 실행되도록 DOMContentLoaded 이벤트 리스너를 추가했습니다.
-    // 이 외에 다른 코드는 전혀 수정하지 않았습니다.
+    // GitHub에서 정상 실행되도록 DOMContentLoaded 이벤트 리스너로 모든 코드를 감쌌습니다.
     window.addEventListener('DOMContentLoaded', () => {
 
         const canvas = document.getElementById('mainCanvas');
@@ -73,7 +72,6 @@
         }
         
         function updatePlayer() {
-            // 1. 입력 및 물리 계산
             if (keys['keya'] || keys['arrowleft']) { player.dx -= PLAYER_ACCEL; player.rotationAngle -= 0.05; }
             if (keys['keyd'] || keys['arrowright']) { player.dx += PLAYER_ACCEL; player.rotationAngle += 0.05; }
             if ((keys['keyw'] || keys['arrowup'] || keys['space']) && player.onGround) { player.dy = JUMP_FORCE; }
@@ -85,7 +83,6 @@
 
             const physicalObjects = worldObjects.filter(o => o.isPhysical);
 
-            // 2. X축 이동 및 충돌 처리
             player.worldX += player.dx;
             for (const p of physicalObjects) {
                 if (checkCollision(player, p).colliding) {
@@ -97,7 +94,6 @@
                 }
             }
             
-            // 3. Y축 이동 및 충돌 처리
             player.worldY += player.dy;
             player.onGround = false;
             for (const p of physicalObjects) {
@@ -115,11 +111,7 @@
                 }
             }
             
-            // 4. 게임 상태 업데이트
-            if (player.worldX > highestX) {
-                highestX = player.worldX;
-            }
-
+            if (player.worldX > highestX) { highestX = player.worldX; }
             if (player.worldX > goal.x) { alert("신호의 끝에 도달했습니다."); init(); }
             if (player.worldY > height + 200) resetPlayer();
         }
@@ -134,9 +126,7 @@
         }
         
         function resetPlayer() {
-            if (highestX > sessionRecordX) {
-                sessionRecordX = highestX;
-            }
+            if (highestX > sessionRecordX) { sessionRecordX = highestX; }
             highestX = 0;
             updateRecordPlatform();
 
@@ -177,7 +167,6 @@
         
         function drawRecordFlag() {
             if (!recordPlatform) return;
-
             const flagWidth = 40, flagHeight = 25, poleHeight = 50, poleWidth = 2;
             const platformCenterX = recordPlatform.worldX + recordPlatform.width / 2;
             const platformTopY = recordPlatform.worldY;
@@ -223,42 +212,25 @@
 
         function init() {
             width = canvas.width = window.innerWidth; height = canvas.height = window.innerHeight;
-            
             highestX = 0;
             sessionRecordX = 0;
-
             player.initialY = height - 200;
             resetPlayer();
 
             const platforms = [];
             let currentX = 100;
             let prevY = height - 100;
-            
             platforms.push({ worldX: currentX, worldY: prevY, width: 250, height: 40, isPhysical: true, shape: 'rect' });
-
-            const platformCount = 50;
-            const MAX_X_GAP = 220;
-            const MIN_X_GAP = 100;
-            const MAX_Y_CHANGE = 120;
-            
+            const platformCount = 50, MAX_X_GAP = 220, MIN_X_GAP = 100, MAX_Y_CHANGE = 120;
             for (let i=0; i < platformCount; i++) {
                 const xGap = MIN_X_GAP + Math.random() * (MAX_X_GAP - MIN_X_GAP);
                 const yChange = (Math.random() - 0.5) * 2 * MAX_Y_CHANGE;
-                
                 let platformWidth = 60 + Math.random() * 100;
-                let platformHeight = 20;
-                
                 currentX += xGap;
                 let newY = prevY + yChange;
-
                 if (newY > height - 60) newY = height - 60;
                 if (newY < 150) newY = 150;
-
-                platforms.push({
-                    worldX: currentX, worldY: newY,
-                    width: platformWidth, height: platformHeight,
-                    isPhysical: true, shape: 'rect'
-                });
+                platforms.push({ worldX: currentX, worldY: newY, width: platformWidth, height: 20, isPhysical: true, shape: 'rect' });
                 prevY = newY;
             }
 
@@ -266,9 +238,7 @@
                 { worldX: -10000, worldY: -10000, width: 100000, height: 20000, isPhysical: false, shape: 'rect' },
                 ...platforms
             ];
-            
             goal = { x: currentX + 500, y: 0, width: 50, height: height * 2 };
-            
             if (!bgPattern) createBackgroundPattern();
             updatePlayerTexture();
         }
