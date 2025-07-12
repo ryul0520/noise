@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>개선된 맵과 깃발</title>
+    <title>자연스러운 롤링 애니메이션</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000; }
         canvas { display: block; cursor: none; }
@@ -11,9 +11,6 @@
 <body>
     <canvas id="mainCanvas"></canvas>
     <script>
-    // GitHub에서 정상 실행되도록 DOMContentLoaded 이벤트 리스너로 모든 코드를 감쌌습니다.
-    window.addEventListener('DOMContentLoaded', () => {
-
         const canvas = document.getElementById('mainCanvas');
         const ctx = canvas.getContext('2d');
 
@@ -41,9 +38,8 @@
         let worldObjects = [];
         let goal;
 
-        // 기록 변수
-        let highestX = 0; // 현재 판의 최고 기록
-        let sessionRecordX = 0; // 세션 전체의 최고 기록
+        let highestX = 0;
+        let sessionRecordX = 0;
         let recordPlatform = null;
 
         const bgCanvas = document.createElement('canvas');
@@ -53,27 +49,96 @@
         const keys = {};
         window.addEventListener('keydown', (e) => { keys[e.code.toLowerCase()] = true; });
         window.addEventListener('keyup', (e) => { keys[e.code.toLowerCase()] = false; });
+        
+        let isTouchingLeft = false;
+        let isTouchingRight = false;
+
+        // ✨ 점프 버튼 영역을 정의하는 객체
+        const jumpButton = {
+            x: 0,
+            y: 0,
+            radius: 50
+        };
+
+        // ✨ 점프 버튼 위치를 화면 크기에 따라 업데이트하는 함수
+        function updateJumpButtonPosition() {
+            jumpButton.x = width - 90; // 화면 오른쪽에서 90px 떨어진 곳
+            jumpButton.y = height - 90; // 화면 아래쪽에서 90px 떨어진 곳
+            jumpButton.radius = 50;
+        }
+
+
+        function handleTouches(e) {
+            e.preventDefault();
+
+            isTouchingLeft = false;
+            isTouchingRight = false;
+            
+            // ✨ 점프가 발생했는지 확인하는 플래그
+            let jumpTriggered = false;
+
+            for (let i = 0; i < e.touches.length; i++) {
+                const touch = e.touches[i];
+                
+                // ✨ 터치 위치와 점프 버튼 중심 사이의 거리 계산
+                const dx = touch.clientX - jumpButton.x;
+                const dy = touch.clientY - jumpButton.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+
+                // ✨ 터치가 점프 버튼 안에 있는지 확인
+                if (distance < jumpButton.radius) {
+                    if (player.onGround) { // 땅에 있을 때만 점프
+                        player.dy = JUMP_FORCE;
+                        jumpTriggered = true; // 점프가 발생했음을 표시
+                    }
+                } else {
+                    // ✨ 점프 버튼을 누른 게 아니라면 좌/우 이동 처리
+                    if (touch.clientX < window.innerWidth / 2) {
+                        isTouchingLeft = true;
+                    } else {
+                        isTouchingRight = true;
+                    }
+                }
+            }
+        }
+
+        window.addEventListener('touchstart', handleTouches, { passive: false });
+        window.addEventListener('touchmove', handleTouches, { passive: false });
+        window.addEventListener('touchend', (e) => {
+            // 터치가 끝나면 이동 상태를 초기화
+            if (e.touches.length === 0) {
+                isTouchingLeft = false;
+                isTouchingRight = false;
+            } else {
+                // 다른 손가락이 남아있을 수 있으므로 다시 한번 핸들러 호출
+                handleTouches(e);
+            }
+        }, { passive: false });
+
 
         function getStaticNoiseValue(x, y) { let seed = Math.floor(x) * 1357 + Math.floor(y) * 2468; let t = seed += 1831565813; t = Math.imul(t ^ t >>> 15, 1 | t); t ^= t + Math.imul(t ^ t >>> 7, 61 | t); return ((t ^ t >>> 14) >>> 0) % 2 === 0 ? 0 : 255; }
         function getFlowingNoiseValue(x, y, time) { const flowingX = x + time * 2; let seed = Math.floor(flowingX) * 16807 + Math.floor(y) * 37; let t = seed += 0x6D2B79F5; t = Math.imul(t ^ t >>> 15, 1 | t); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) % 2 === 0 ? 0 : 255; }
         
-        const playerTextureCanvas = document.createElement('canvas'); const pTextureCtx = playerTextureCanvas.getContext('2d'); playerTextureCanvas.width = PLAYER_TEXTURE_SIZE; playerTextureCanvas.height = PLAYER_TEXTURE_SIZE;
+        const playerTextureCanvas = document.createElement('canvas');
+        const pTextureCtx = playerTextureCanvas.getContext('2d');
+        playerTextureCanvas.width = PLAYER_TEXTURE_SIZE;
+        playerTextureCanvas.height = PLAYER_TEXTURE_SIZE;
 
-        function updatePlayerTexture() {
-            if (Math.abs(player.dx) > 0.1 || !player.onGround) {
-                const imageData = pTextureCtx.createImageData(PLAYER_TEXTURE_SIZE, PLAYER_TEXTURE_SIZE);
-                const data = imageData.data;
-                for (let i = 0; i < data.length; i += 4) {
-                    const shade = Math.random() < 0.5 ? 0 : 255;
-                    data[i] = shade; data[i+1] = shade; data[i+2] = shade; data[i+3] = 255;
-                }
-                pTextureCtx.putImageData(imageData, 0, 0);
+        function createPlayerTexture() {
+            const imageData = pTextureCtx.createImageData(PLAYER_TEXTURE_SIZE, PLAYER_TEXTURE_SIZE);
+            const data = imageData.data;
+            for (let i = 0; i < data.length; i += 4) {
+                const shade = Math.random() < 0.5 ? 0 : 255;
+                data[i] = shade; data[i+1] = shade; data[i+2] = shade; data[i+3] = 255;
             }
+            pTextureCtx.putImageData(imageData, 0, 0);
         }
         
         function updatePlayer() {
-            if (keys['keya'] || keys['arrowleft']) { player.dx -= PLAYER_ACCEL; player.rotationAngle -= 0.05; }
-            if (keys['keyd'] || keys['arrowright']) { player.dx += PLAYER_ACCEL; player.rotationAngle += 0.05; }
+            if (keys['keya'] || keys['arrowleft'] || isTouchingLeft) { player.dx -= PLAYER_ACCEL; }
+            if (keys['keyd'] || keys['arrowright'] || isTouchingRight) { player.dx += PLAYER_ACCEL; }
+            
+            // ✨ 키보드 점프는 그대로 유지
             if ((keys['keyw'] || keys['arrowup'] || keys['space']) && player.onGround) { player.dy = JUMP_FORCE; }
             
             player.dx *= FRICTION;
@@ -81,13 +146,14 @@
             if (Math.abs(player.dx) > MAX_SPEED) player.dx = Math.sign(player.dx) * MAX_SPEED;
             player.dy += GRAVITY;
 
+            player.rotationAngle += player.dx * 0.02;
+
             const physicalObjects = worldObjects.filter(o => o.isPhysical);
 
             player.worldX += player.dx;
             for (const p of physicalObjects) {
                 if (checkCollision(player, p).colliding) {
-                    const playerCenterX = player.worldX;
-                    const platformCenterX = p.worldX + p.width / 2;
+                    const playerCenterX = player.worldX; const platformCenterX = p.worldX + p.width / 2;
                     if (playerCenterX < platformCenterX) player.worldX = p.worldX - player.radius;
                     else player.worldX = p.worldX + p.width + player.radius;
                     player.dx = 0;
@@ -104,10 +170,7 @@
                             player.onGround = true;
                             player.dy = 0;
                         }
-                    } else {
-                        player.worldY = p.worldY + p.height + player.radius;
-                        player.dy = 0;
-                    }
+                    } else { player.worldY = p.worldY + p.height + player.radius; player.dy = 0; }
                 }
             }
             
@@ -119,21 +182,16 @@
         function checkCollision(playerObj, platformObj) {
             const closestX = Math.max(platformObj.worldX, Math.min(playerObj.worldX, platformObj.worldX + platformObj.width));
             const closestY = Math.max(platformObj.worldY, Math.min(playerObj.worldY, platformObj.worldY + platformObj.height));
-            const distanceX = playerObj.worldX - closestX;
-            const distanceY = playerObj.worldY - closestY;
+            const distanceX = playerObj.worldX - closestX; const distanceY = playerObj.worldY - closestY;
             const distanceSquared = (distanceX * distanceX) + (distanceY * distanceY);
             return { colliding: distanceSquared < (playerObj.radius * playerObj.radius) };
         }
         
         function resetPlayer() {
             if (highestX > sessionRecordX) { sessionRecordX = highestX; }
-            highestX = 0;
-            updateRecordPlatform();
-
-            player.worldX = player.initialX;
-            player.worldY = player.initialY;
-            player.dx = 0;
-            player.dy = 0;
+            highestX = 0; updateRecordPlatform();
+            player.worldX = player.initialX; player.worldY = player.initialY;
+            player.dx = 0; player.dy = 0;
         }
         
         function renderWorld() {
@@ -151,12 +209,10 @@
                 
                 ctx.save();
                 ctx.beginPath();
-                ctx.moveTo(screenX, screenY);
-                ctx.lineTo(screenX + obj.width, screenY);
+                ctx.moveTo(screenX, screenY); ctx.lineTo(screenX + obj.width, screenY);
                 ctx.lineTo(screenX + obj.width, screenY + obj.height);
                 ctx.arc(screenX + obj.width / 2, screenY + obj.height, obj.width / 2, 0, Math.PI, false);
-                ctx.closePath();
-                ctx.clip();
+                ctx.closePath(); ctx.clip();
                 
                 ctx.translate(-(camera.x % 1024), -(camera.y % 1024));
                 ctx.fillStyle = bgPattern;
@@ -172,7 +228,6 @@
             const platformTopY = recordPlatform.worldY;
             const screenPoleX = Math.floor(platformCenterX - camera.x);
             const screenPoleTopY = Math.floor(platformTopY - poleHeight - camera.y);
-
             if (screenPoleX + flagWidth < 0 || screenPoleX - poleWidth > width) return;
 
             const poleImageData = ctx.createImageData(poleWidth, poleHeight);
@@ -187,66 +242,89 @@
         }
 
         function drawGoal(time) { const screenX = Math.floor(goal.x - camera.x); const screenY = Math.floor(goal.y - camera.y); if (screenX + goal.width < 0 || screenX > width) return; const imageData = ctx.createImageData(goal.width, goal.height); const data = imageData.data; for(let y = 0; y < goal.height; y++) { for(let x = 0; x < goal.width; x++) { const shade = getFlowingNoiseValue(x, y, time); const index = (y * goal.width + x) * 4; data[index] = shade; data[index+1] = shade; data[index+2] = shade; data[index+3] = 255; } } ctx.putImageData(imageData, screenX, screenY); }
-        function drawPlayer() { const screenX = width / 2; const screenY = height / 2; ctx.save(); ctx.beginPath(); ctx.arc(screenX, screenY, player.radius, 0, Math.PI * 2); ctx.clip(); ctx.translate(screenX, screenY); ctx.rotate(player.rotationAngle); ctx.drawImage(playerTextureCanvas, -PLAYER_TEXTURE_SIZE / 2, -PLAYER_TEXTURE_SIZE / 2); ctx.restore(); }
+        
+        function drawPlayer() {
+            const screenX = width / 2; const screenY = height / 2;
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, player.radius, 0, Math.PI * 2);
+            ctx.clip();
+            ctx.translate(screenX, screenY);
+            ctx.rotate(player.rotationAngle);
+            ctx.drawImage(playerTextureCanvas, -player.radius, -player.radius, player.radius * 2, player.radius * 2);
+            ctx.restore();
+        }
+
+        // ✨ 점프 버튼을 그리는 함수
+        function drawJumpButton() {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.2)'; // 반투명 흰색
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+            ctx.lineWidth = 2;
+
+            ctx.beginPath();
+            ctx.arc(jumpButton.x, jumpButton.y, jumpButton.radius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+        }
 
         let lastTime = 0;
         function animate(time) {
             if(!lastTime) lastTime = time;
-            updatePlayer(); updatePlayerTexture();
+            updatePlayer();
             camera.x = player.worldX - (width / 2); camera.y = player.worldY - (height / 2);
-            renderWorld(); drawRecordFlag(); drawGoal(time / 100); drawPlayer();
+            renderWorld(); 
+            drawRecordFlag(); 
+            drawGoal(time / 100); 
+            drawPlayer();
+            drawJumpButton(); // ✨ 점프 버튼 그리기 호출
             requestAnimationFrame(animate);
         }
 
         function createBackgroundPattern() { const pS = 1024; bgCanvas.width=pS; bgCanvas.height=pS; const iD = bgCtx.createImageData(pS, pS); const d = iD.data; for(let i=0; i<d.length; i+=4) { const s = getStaticNoiseValue(i % pS, Math.floor(i / pS)); d[i]=s; d[i+1]=s; d[i+2]=s; d[i+3]=255; } bgCtx.putImageData(iD, 0, 0); bgPattern = ctx.createPattern(bgCanvas, 'repeat'); }
 
         function updateRecordPlatform() {
-            const physicalPlatforms = worldObjects.filter(o => o.isPhysical);
-            let bestPlatform = null;
+            const physicalPlatforms = worldObjects.filter(o => o.isPhysical); let bestPlatform = null;
             for (const p of physicalPlatforms) {
-                if (p.worldX <= sessionRecordX) { bestPlatform = p; } 
-                else { break; }
+                if (p.worldX <= sessionRecordX) { bestPlatform = p; } else { break; }
             }
             recordPlatform = bestPlatform;
         }
 
         function init() {
             width = canvas.width = window.innerWidth; height = canvas.height = window.innerHeight;
-            highestX = 0;
-            sessionRecordX = 0;
+            
+            // ✨ 화면 크기가 바뀔 때마다 점프 버튼 위치 업데이트
+            updateJumpButtonPosition();
+
+            highestX = 0; sessionRecordX = 0;
             player.initialY = height - 200;
             resetPlayer();
 
-            const platforms = [];
-            let currentX = 100;
-            let prevY = height - 100;
+            const platforms = []; let currentX = 100; let prevY = height - 100;
             platforms.push({ worldX: currentX, worldY: prevY, width: 250, height: 40, isPhysical: true, shape: 'rect' });
             const platformCount = 50, MAX_X_GAP = 220, MIN_X_GAP = 100, MAX_Y_CHANGE = 120;
             for (let i=0; i < platformCount; i++) {
                 const xGap = MIN_X_GAP + Math.random() * (MAX_X_GAP - MIN_X_GAP);
                 const yChange = (Math.random() - 0.5) * 2 * MAX_Y_CHANGE;
-                let platformWidth = 60 + Math.random() * 100;
-                currentX += xGap;
-                let newY = prevY + yChange;
-                if (newY > height - 60) newY = height - 60;
-                if (newY < 150) newY = 150;
-                platforms.push({ worldX: currentX, worldY: newY, width: platformWidth, height: 20, isPhysical: true, shape: 'rect' });
+                let platformWidth = 60 + Math.random() * 100, platformHeight = 20;
+                currentX += xGap; let newY = prevY + yChange;
+                if (newY > height - 60) newY = height - 60; if (newY < 150) newY = 150;
+                platforms.push({ worldX: currentX, worldY: newY, width: platformWidth, height: platformHeight, isPhysical: true, shape: 'rect' });
                 prevY = newY;
             }
 
-            worldObjects = [
-                { worldX: -10000, worldY: -10000, width: 100000, height: 20000, isPhysical: false, shape: 'rect' },
-                ...platforms
-            ];
+            worldObjects = [ { worldX: -10000, worldY: -10000, width: 100000, height: 20000, isPhysical: false, shape: 'rect' }, ...platforms ];
             goal = { x: currentX + 500, y: 0, width: 50, height: height * 2 };
-            if (!bgPattern) createBackgroundPattern();
-            updatePlayerTexture();
+            
+            if (!bgPattern) {
+                createBackgroundPattern();
+                createPlayerTexture();
+            }
         }
 
         window.addEventListener('resize', init);
         init();
         animate(0);
-    });
     </script>
 </body>
 </html>
