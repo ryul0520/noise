@@ -6,12 +6,12 @@ window.onload = function() {
     let width, height;
     ctx.imageSmoothingEnabled = false;
 
-    // ✨ (밸런스 조정) 플레이어 속도 1.1배로 미세 조정
+    // ✨ 플레이어 속도를 원래의 컨트롤하기 쉬운 속도로 복원
     const BASE_GRAVITY = 1.0; 
     const BASE_JUMP_FORCE = -18;
-    const BASE_PLAYER_ACCEL = 1.8 * 1.1; 
+    const BASE_PLAYER_ACCEL = 1.8; 
     const BASE_FRICTION = 0.90;
-    const BASE_MAX_SPEED = 8 * 1.1;
+    const BASE_MAX_SPEED = 8;
     
     let GRAVITY = BASE_GRAVITY; 
     let JUMP_FORCE = BASE_JUMP_FORCE; 
@@ -46,6 +46,11 @@ window.onload = function() {
     let fireworksLaunched = false;
     let rockets = []; 
     let particles = [];
+
+    const bgCanvas = document.createElement('canvas'), bgCtx = bgCanvas.getContext('2d');
+    let bgPattern;
+    const playerTextureCanvas = document.createElement('canvas'); 
+    const pTextureCtx = playerTextureCanvas.getContext('2d'); 
     
     let portalBorderCanvas, portalNoiseMaskCanvas, portalCompositeCanvas;
 
@@ -76,8 +81,9 @@ window.onload = function() {
                 touch.clientY > resetButton.y && touch.clientY < resetButton.y + resetButton.height) {
                 if (confirm("모든 진행 상황을 초기화하고 1단계부터 다시 시작하시겠습니까?")) {
                     localStorage.removeItem('noiseGameState');
+                    // 타이머도 확실하게 제거
                     if (spawnCheckTimer) clearInterval(spawnCheckTimer);
-                    spawnCheckTimer = null; // 타이머 완전 초기화
+                    spawnCheckTimer = null;
                     init(1);
                 }
                 return;
@@ -97,7 +103,6 @@ window.onload = function() {
 
     function getStaticNoiseValue(x, y) { let seed = Math.floor(x) * 1357 + Math.floor(y) * 2468; let t = seed += 1831565813; t = Math.imul(t ^ t >>> 15, 1 | t); t ^= t + Math.imul(t ^ t >>> 7, 61 | t); return ((t ^ t >>> 14) >>> 0) % 2 === 0 ? 0 : 255; }
     
-    const playerTextureCanvas = document.createElement('canvas'); const pTextureCtx = playerTextureCanvas.getContext('2d'); 
     function createPlayerTexture() { 
         playerTextureCanvas.width = PLAYER_TEXTURE_SIZE; playerTextureCanvas.height = PLAYER_TEXTURE_SIZE;
         const iD = pTextureCtx.createImageData(PLAYER_TEXTURE_SIZE,PLAYER_TEXTURE_SIZE); 
@@ -136,11 +141,7 @@ window.onload = function() {
         if (portal && !gameCleared) { if (checkPlatformCollision(player, portal)) clearGame(); }
         player.rotationAngle += player.dx * 0.02;
         if (player.worldX > highestX) highestX = player.worldX;
-        
-        // ✨ 죽었을 때, 스테이지를 재시작하는 대신 플레이어만 리셋
-        if (player.worldY > height + 800) { 
-            if (!gameCleared) resetPlayer();
-        }
+        if (player.worldY > height + 800) { if (!gameCleared) init(currentStage); }
     }
     
     function checkPlatformCollision(p, plat) { const cX = Math.max(plat.worldX, Math.min(p.worldX, plat.worldX + plat.width)); const cY = Math.max(plat.worldY, Math.min(p.worldY, plat.worldY + plat.height)); return ((p.worldX - cX)**2 + (p.worldY - cY)**2) < (p.radius**2); }

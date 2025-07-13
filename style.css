@@ -1,16 +1,10 @@
-body, html {
+body {
     margin: 0;
     overflow: hidden;
     background-color: #000;
-    width: 100%;
-    height: 100%;
-    display: flex;
-    justify-content: center;
-    align-items: center;
 }
 
 canvas {
     display: block;
     cursor: none;
-    background-color: #000;
 }
