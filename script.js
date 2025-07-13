@@ -5,7 +5,7 @@ window.onload = function() {
     let width, height;
     ctx.imageSmoothingEnabled = false;
 
-    // ✨ (밸런스 조정) 플레이어 속도 절반으로 감소
+    // ✨ (밸런스 조정) 플레이어 속도를 원래대로 되돌림
     const BASE_GRAVITY = 1.0; 
     const BASE_JUMP_FORCE = -18;
     const BASE_PLAYER_ACCEL = 1.8; 
@@ -260,10 +260,10 @@ window.onload = function() {
     function generateCoin(type) {
         let dx, dy;
         if (type === 'ice') {
-            dx = (Math.random() - 0.5) * 60; // ✨ 속도 2배 증가
+            dx = (Math.random() - 0.5) * 60;
             dy = (Math.random() - 0.5) * 30;
         } else { 
-            dx = (Math.random() - 0.5) * 12; // ✨ 속도 2배 증가
+            dx = (Math.random() - 0.5) * 12;
             dy = (Math.random() - 0.5) * 6;
         }
         const newCoin = {
@@ -325,12 +325,15 @@ window.onload = function() {
         portal = { worldX: portalX, worldY: prevY - portalHeight / 2, width: portalWidth, height: portalHeight, isPhysical: false };
         worldObjects = [ { worldX: -100000, worldY: -10000, width: 200000, height: 20000, isPhysical: false }, ...platforms ];
         
+        // ✨ init 함수에서는 더 이상 텍스처를 생성하지 않음.
         createPortalAssets();
     }
     
+    // ✨ 모든 리소스/변수/함수가 정의된 후 게임 시작
+    createPlayerTexture();
+    createBackgroundPattern(); // 이제 이 함수는 전역에 존재
+    
     window.addEventListener('resize', () => init(currentStage));
-    
     init(1);
-    
     animate(0);
 };
