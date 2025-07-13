@@ -11,7 +11,6 @@
 <body>
     <canvas id="mainCanvas"></canvas>
     <script>
-        // ✨ (버그 수정) 모든 코드를 window.onload 안에 넣어 리소스 로딩 후 실행되도록 보장
         window.onload = function() {
             const canvas = document.getElementById('mainCanvas');
             const ctx = canvas.getContext('2d');
@@ -218,6 +217,8 @@
             
             window.addEventListener('resize', () => init(currentStage));
             init(1);
+            
+            // ✨ (버그 수정) 게임 루프 시작!
             animate(0);
         };
     </script>
