@@ -2,9 +2,26 @@ body {
     margin: 0;
     overflow: hidden;
     background-color: #000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
 }
 
 canvas {
     display: block;
     cursor: none;
+    /* 기본적으로 캔버스가 화면에 꽉 차도록 설정 */
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+
+/* 모바일 화면 (가로 768px 이하) 에서만 적용 */
+@media (max-width: 768px) {
+    canvas {
+        /* 화면을 약간 축소하여 전체가 보이도록 함 */
+        transform: scale(0.95); 
+        border-radius: 10px; /* 미관상 살짝 둥글게 */
+    }
 }
