@@ -1,4 +1,3 @@
-// ✨ 모든 코드를 window.onload 안에 넣어 리소스 로딩 후 실행되도록 보장
 window.onload = function() {
     const canvas = document.getElementById('mainCanvas');
     const ctx = canvas.getContext('2d');
@@ -6,15 +5,21 @@ window.onload = function() {
     let width, height;
     ctx.imageSmoothingEnabled = false;
 
-    const BASE_GRAVITY = 1.0; const BASE_JUMP_FORCE = -18;
+    const BASE_GRAVITY = 1.0; 
+    const BASE_JUMP_FORCE = -18;
     const BASE_PLAYER_ACCEL = 3.6; 
     const BASE_FRICTION = 0.90;
     const BASE_MAX_SPEED = 16;
     
-    let GRAVITY = BASE_GRAVITY; let JUMP_FORCE = BASE_JUMP_FORCE; let PLAYER_ACCEL = BASE_PLAYER_ACCEL;
-    let FRICTION = BASE_FRICTION; let MAX_SPEED = BASE_MAX_SPEED;
+    let GRAVITY = BASE_GRAVITY; 
+    let JUMP_FORCE = BASE_JUMP_FORCE; 
+    let PLAYER_ACCEL = BASE_PLAYER_ACCEL;
+    let FRICTION = BASE_FRICTION; 
+    let MAX_SPEED = BASE_MAX_SPEED;
 
-    const PLAYER_TEXTURE_SIZE = 128; const PORTAL_BORDER_SIZE = 16; const STAGE_RESET_DELAY = 3000;
+    const PLAYER_TEXTURE_SIZE = 128; 
+    const PORTAL_BORDER_SIZE = 16; 
+    const STAGE_RESET_DELAY = 3000;
     
     const SPAWN_CHECK_INTERVAL = 4000;
     const MAX_ICE_COINS = 2;
@@ -29,12 +34,16 @@ window.onload = function() {
     const camera = { x: 0, y: 0 };
     
     let worldObjects = [], portal = null;
-    let iceCoins = []; let rainbowCoins = [];
+    let iceCoins = []; 
+    let rainbowCoins = [];
     let spawnCheckTimer = null; 
     let highestX = 0, sessionRecordX = 0, recordPlatform = null;
 
-    let currentStage = 1; let gameCleared = false; let fireworksLaunched = false;
-    let rockets = []; let particles = [];
+    let currentStage = 1; 
+    let gameCleared = false; 
+    let fireworksLaunched = false;
+    let rockets = []; 
+    let particles = [];
 
     const bgCanvas = document.createElement('canvas'), bgCtx = bgCanvas.getContext('2d');
     let bgPattern;
@@ -50,42 +59,149 @@ window.onload = function() {
     const leftButton = { x: 0, y: 0, radius: 40 };
     const rightButton = { x: 0, y: 0, radius: 40 };
 
-    function updateControlButtonsPosition() { jumpButton.x = width - 90; jumpButton.y = height - 90; jumpButton.radius = 50; leftButton.x = 90; leftButton.y = height - 90; leftButton.radius = 40; rightButton.x = leftButton.x + leftButton.radius * 2 + 20; rightButton.y = height - 90; rightButton.radius = 40; }
-    function handleTouches(e) { e.preventDefault(); isTouchingLeft = false; isTouchingRight = false; for (let i = 0; i < e.touches.length; i++) { const touch = e.touches[i]; const distJump = Math.sqrt((touch.clientX - jumpButton.x)**2 + (touch.clientY - jumpButton.y)**2); if (distJump < jumpButton.radius) { if (player.onGround && !gameCleared && !player.isFrozen) { player.dy = JUMP_FORCE; } continue; } const distLeft = Math.sqrt((touch.clientX - leftButton.x)**2 + (touch.clientY - leftButton.y)**2); if (distLeft < leftButton.radius) { isTouchingLeft = true; continue; } const distRight = Math.sqrt((touch.clientX - rightButton.x)**2 + (touch.clientY - rightButton.y)**2); if (distRight < rightButton.radius) { isTouchingRight = true; continue; } } }
-    window.addEventListener('touchstart', handleTouches, { passive: false }); window.addEventListener('touchmove', handleTouches, { passive: false }); window.addEventListener('touchend', (e) => { handleTouches(e); }, { passive: false });
+    function updateControlButtonsPosition() { 
+        jumpButton.x = width - 90; 
+        jumpButton.y = height - 90; 
+        jumpButton.radius = 50; 
+        leftButton.x = 90; 
+        leftButton.y = height - 90; 
+        leftButton.radius = 40; 
+        rightButton.x = leftButton.x + leftButton.radius * 2 + 20; 
+        rightButton.y = height - 90; 
+        rightButton.radius = 40; 
+    }
+    
+    function handleTouches(e) { 
+        e.preventDefault(); 
+        isTouchingLeft = false; 
+        isTouchingRight = false; 
+        for (let i = 0; i < e.touches.length; i++) { 
+            const touch = e.touches[i]; 
+            const distJump = Math.sqrt((touch.clientX - jumpButton.x)**2 + (touch.clientY - jumpButton.y)**2); 
+            if (distJump < jumpButton.radius) { 
+                if (player.onGround && !gameCleared && !player.isFrozen) { 
+                    player.dy = JUMP_FORCE; 
+                } 
+                continue; 
+            } 
+            const distLeft = Math.sqrt((touch.clientX - leftButton.x)**2 + (touch.clientY - leftButton.y)**2); 
+            if (distLeft < leftButton.radius) { 
+                isTouchingLeft = true; 
+                continue; 
+            } 
+            const distRight = Math.sqrt((touch.clientX - rightButton.x)**2 + (touch.clientY - rightButton.y)**2); 
+            if (distRight < rightButton.radius) { 
+                isTouchingRight = true; 
+                continue; 
+            } 
+        } 
+    }
+
+    window.addEventListener('touchstart', handleTouches, { passive: false }); 
+    window.addEventListener('touchmove', handleTouches, { passive: false }); 
+    window.addEventListener('touchend', (e) => { handleTouches(e); }, { passive: false });
 
     function getStaticNoiseValue(x, y) { let seed = Math.floor(x) * 1357 + Math.floor(y) * 2468; let t = seed += 1831565813; t = Math.imul(t ^ t >>> 15, 1 | t); t ^= t + Math.imul(t ^ t >>> 7, 61 | t); return ((t ^ t >>> 14) >>> 0) % 2 === 0 ? 0 : 255; }
     
-    const playerTextureCanvas = document.createElement('canvas'); const pTextureCtx = playerTextureCanvas.getContext('2d'); playerTextureCanvas.width = PLAYER_TEXTURE_SIZE; playerTextureCanvas.height = PLAYER_TEXTURE_SIZE;
-    function createPlayerTexture() { const iD = pTextureCtx.createImageData(PLAYER_TEXTURE_SIZE,PLAYER_TEXTURE_SIZE); const d = iD.data; for (let i = 0; i < d.length; i+=4) { const s = Math.random() < 0.5 ? 0 : 255; d[i]=s; d[i+1]=s; d[i+2]=s; d[i+3]=255; } pTextureCtx.putImageData(iD, 0, 0); }
+    const playerTextureCanvas = document.createElement('canvas'); 
+    const pTextureCtx = playerTextureCanvas.getContext('2d'); 
+    playerTextureCanvas.width = PLAYER_TEXTURE_SIZE; 
+    playerTextureCanvas.height = PLAYER_TEXTURE_SIZE;
+    
+    function createPlayerTexture() { 
+        const iD = pTextureCtx.createImageData(PLAYER_TEXTURE_SIZE,PLAYER_TEXTURE_SIZE); 
+        const d = iD.data; 
+        for (let i = 0; i < d.length; i+=4) { 
+            const s = Math.random() < 0.5 ? 0 : 255; 
+            d[i]=s; d[i+1]=s; d[i+2]=s; d[i+3]=255; 
+        } 
+        pTextureCtx.putImageData(iD, 0, 0); 
+    }
     
     function updatePlayer(time) {
         if (gameCleared) return;
-        if (player.isFrozen) { if (time > player.freezeEndTime) player.isFrozen = false; return; }
-        if (player.isBoosted) { if (time > player.boostEndTime) { player.isBoosted = false; MAX_SPEED = BASE_MAX_SPEED; JUMP_FORCE = BASE_JUMP_FORCE; } else { MAX_SPEED = BASE_MAX_SPEED * 1.5; JUMP_FORCE = BASE_JUMP_FORCE * 1.5; } }
+        if (player.isFrozen) { 
+            if (time > player.freezeEndTime) player.isFrozen = false; 
+            return; 
+        }
+        if (player.isBoosted) { 
+            if (time > player.boostEndTime) { 
+                player.isBoosted = false; 
+                MAX_SPEED = BASE_MAX_SPEED; 
+                JUMP_FORCE = BASE_JUMP_FORCE; 
+            } else { 
+                MAX_SPEED = BASE_MAX_SPEED * 1.5; 
+                JUMP_FORCE = BASE_JUMP_FORCE * 1.5; 
+            } 
+        }
         
         if (keys['keya'] || keys['arrowleft'] || isTouchingLeft) player.dx -= PLAYER_ACCEL;
         if (keys['keyd'] || keys['arrowright'] || isTouchingRight) player.dx += PLAYER_ACCEL;
-        if ((keys['keyw'] || keys['arrowup'] || keys['space']) && player.onGround) { player.dy = JUMP_FORCE; player.onGround = false; }
+        if ((keys['keyw'] || keys['arrowup'] || keys['space']) && player.onGround) { 
+            player.dy = JUMP_FORCE; 
+            player.onGround = false; 
+        }
         player.dx *= FRICTION;
         if (Math.abs(player.dx) < 0.1) player.dx = 0;
         if (Math.abs(player.dx) > MAX_SPEED) player.dx = Math.sign(player.dx) * MAX_SPEED;
         if (!player.onGround) player.dy += GRAVITY;
+        
         const physicalObjects = worldObjects.filter(o => o.isPhysical);
         const lastPlayerY = player.worldY;
         player.worldX += player.dx;
-        for (const p of physicalObjects) { if (checkPlatformCollision(player, p)) { if (player.dx > 0) player.worldX = p.worldX - player.radius; else if (player.dx < 0) player.worldX = p.worldX + p.width + player.radius; player.dx = 0; } }
+        for (const p of physicalObjects) { 
+            if (checkPlatformCollision(player, p)) { 
+                if (player.dx > 0) player.worldX = p.worldX - player.radius; 
+                else if (player.dx < 0) player.worldX = p.worldX + p.width + player.radius; 
+                player.dx = 0; 
+            } 
+        }
         player.worldY += player.dy;
         player.onGround = false;
-        for (const p of physicalObjects) { if (checkPlatformCollision(player, p)) { if (player.dy >= 0 && lastPlayerY + player.radius <= p.worldY + 1) { player.worldY = p.worldY - player.radius; player.dy = 0; player.onGround = true; } else if (player.dy < 0) { player.worldY = p.worldY + p.height + player.radius; player.dy = 0; } } }
+        for (const p of physicalObjects) { 
+            if (checkPlatformCollision(player, p)) { 
+                if (player.dy >= 0 && lastPlayerY + player.radius <= p.worldY + 1) { 
+                    player.worldY = p.worldY - player.radius; 
+                    player.dy = 0; 
+                    player.onGround = true; 
+                } else if (player.dy < 0) { 
+                    player.worldY = p.worldY + p.height + player.radius; 
+                    player.dy = 0; 
+                } 
+            } 
+        }
         
-        for (const coin of iceCoins) { if (coin.active) { const distSq = (player.worldX - coin.worldX)**2 + (player.worldY - coin.worldY)**2; if (distSq < (player.radius + coin.radius)**2) { coin.active = false; player.isFrozen = true; player.freezeEndTime = time + 3000; player.dx = 0; player.dy = 0; } } }
-        for (const coin of rainbowCoins) { if (coin.active) { const distSq = (player.worldX - coin.worldX)**2 + (player.worldY - coin.worldY)**2; if (distSq < (player.radius + coin.radius)**2) { coin.active = false; player.isBoosted = true; player.boostEndTime = time + 5000; } } }
+        for (const coin of iceCoins) { 
+            if (coin.active) { 
+                const distSq = (player.worldX - coin.worldX)**2 + (player.worldY - coin.worldY)**2; 
+                if (distSq < (player.radius + coin.radius)**2) { 
+                    coin.active = false; 
+                    player.isFrozen = true; 
+                    player.freezeEndTime = time + 3000; 
+                    player.dx = 0; 
+                    player.dy = 0; 
+                } 
+            } 
+        }
+        for (const coin of rainbowCoins) { 
+            if (coin.active) { 
+                const distSq = (player.worldX - coin.worldX)**2 + (player.worldY - coin.worldY)**2; 
+                if (distSq < (player.radius + coin.radius)**2) { 
+                    coin.active = false; 
+                    player.isBoosted = true; 
+                    player.boostEndTime = time + 5000; 
+                } 
+            } 
+        }
 
-        if (portal && !gameCleared) { if (checkPlatformCollision(player, portal)) clearGame(); }
+        if (portal && !gameCleared) { 
+            if (checkPlatformCollision(player, portal)) clearGame(); 
+        }
         player.rotationAngle += player.dx * 0.02;
         if (player.worldX > highestX) highestX = player.worldX;
-        if (player.worldY > height + 800) { if (!gameCleared) init(currentStage); }
+        if (player.worldY > height + 800) { 
+            if (!gameCleared) init(currentStage); 
+        }
     }
     
     function checkPlatformCollision(p, plat) { const cX = Math.max(plat.worldX, Math.min(p.worldX, plat.worldX + plat.width)); const cY = Math.max(plat.worldY, Math.min(p.worldY, plat.worldY + plat.height)); return ((p.worldX - cX)**2 + (p.worldY - cY)**2) < (p.radius**2); }
@@ -209,6 +325,3 @@ window.onload = function() {
     
     animate(0);
 };
-    </script>
-</body>
-</html>
