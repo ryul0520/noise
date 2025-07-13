@@ -5,11 +5,12 @@ window.onload = function() {
     let width, height;
     ctx.imageSmoothingEnabled = false;
 
+    // ✨ (밸런스 조정) 플레이어 속도 절반으로 감소
     const BASE_GRAVITY = 1.0; 
     const BASE_JUMP_FORCE = -18;
-    const BASE_PLAYER_ACCEL = 3.6; 
+    const BASE_PLAYER_ACCEL = 1.8; 
     const BASE_FRICTION = 0.90;
-    const BASE_MAX_SPEED = 16;
+    const BASE_MAX_SPEED = 8;
     
     let GRAVITY = BASE_GRAVITY; 
     let JUMP_FORCE = BASE_JUMP_FORCE; 
@@ -44,9 +45,6 @@ window.onload = function() {
     let fireworksLaunched = false;
     let rockets = []; 
     let particles = [];
-
-    const bgCanvas = document.createElement('canvas'), bgCtx = bgCanvas.getContext('2d');
-    let bgPattern;
     
     let portalBorderCanvas, portalNoiseMaskCanvas, portalCompositeCanvas;
 
@@ -102,21 +100,6 @@ window.onload = function() {
     window.addEventListener('touchend', (e) => { handleTouches(e); }, { passive: false });
 
     function getStaticNoiseValue(x, y) { let seed = Math.floor(x) * 1357 + Math.floor(y) * 2468; let t = seed += 1831565813; t = Math.imul(t ^ t >>> 15, 1 | t); t ^= t + Math.imul(t ^ t >>> 7, 61 | t); return ((t ^ t >>> 14) >>> 0) % 2 === 0 ? 0 : 255; }
-    
-    const playerTextureCanvas = document.createElement('canvas'); 
-    const pTextureCtx = playerTextureCanvas.getContext('2d'); 
-    playerTextureCanvas.width = PLAYER_TEXTURE_SIZE; 
-    playerTextureCanvas.height = PLAYER_TEXTURE_SIZE;
-    
-    function createPlayerTexture() { 
-        const iD = pTextureCtx.createImageData(PLAYER_TEXTURE_SIZE,PLAYER_TEXTURE_SIZE); 
-        const d = iD.data; 
-        for (let i = 0; i < d.length; i+=4) { 
-            const s = Math.random() < 0.5 ? 0 : 255; 
-            d[i]=s; d[i+1]=s; d[i+2]=s; d[i+3]=255; 
-        } 
-        pTextureCtx.putImageData(iD, 0, 0); 
-    }
     
     function updatePlayer(time) {
         if (gameCleared) return;
@@ -206,13 +189,40 @@ window.onload = function() {
     
     function checkPlatformCollision(p, plat) { const cX = Math.max(plat.worldX, Math.min(p.worldX, plat.worldX + plat.width)); const cY = Math.max(plat.worldY, Math.min(p.worldY, plat.worldY + plat.height)); return ((p.worldX - cX)**2 + (p.worldY - cY)**2) < (p.radius**2); }
     function resetPlayer() { if (highestX > sessionRecordX) sessionRecordX = highestX; highestX = 0; updateRecordPlatform(); player.worldX = player.initialX; player.worldY = player.initialY; player.dx = 0; player.dy = 0; player.isFrozen = false; player.freezeEndTime = 0; player.isBoosted = false; player.boostEndTime = 0; MAX_SPEED = BASE_MAX_SPEED; JUMP_FORCE = BASE_JUMP_FORCE; PLAYER_ACCEL = BASE_PLAYER_ACCEL; }
-    function renderWorld() { ctx.save(); ctx.translate(-(camera.x * 0.2) % 1024, -(camera.y * 0.2) % 1024); ctx.fillStyle = bgPattern; ctx.fillRect((camera.x * 0.2) % 1024, (camera.y * 0.2) % 1024, width, height); ctx.restore(); const physicalObjects = worldObjects.filter(o => o.isPhysical); physicalObjects.forEach(obj => { const screenX = Math.floor(obj.worldX - camera.x); const screenY = Math.floor(obj.worldY - camera.y); if (screenX + obj.width < 0 || screenX > width || screenY + obj.height < 0 || screenY > height) return; ctx.save(); ctx.beginPath(); ctx.rect(screenX, screenY, obj.width, obj.height); ctx.clip(); ctx.translate(-(camera.x % 1024), -(camera.y % 1024)); ctx.fillStyle = bgPattern; ctx.fillRect(camera.x % 1024, camera.y % 1024, width, height); ctx.restore(); }); }
+    
+    function renderWorld() { 
+        ctx.fillStyle = '#000'; 
+        ctx.fillRect(0, 0, width, height);
+        
+        const physicalObjects = worldObjects.filter(o => o.isPhysical);
+        physicalObjects.forEach(obj => {
+            const screenX = Math.floor(obj.worldX - camera.x); 
+            const screenY = Math.floor(obj.worldY - camera.y);
+            if (screenX + obj.width < 0 || screenX > width || screenY + obj.height < 0 || screenY > height) return;
+            ctx.fillStyle = '#222';
+            ctx.fillRect(screenX, screenY, obj.width, obj.height);
+        });
+    }
+
     function createPortalAssets() { const outerWidth = portal.width + PORTAL_BORDER_SIZE * 2; const outerHeight = portal.height + PORTAL_BORDER_SIZE * 2; portalBorderCanvas = document.createElement('canvas'); portalBorderCanvas.width = outerWidth; portalBorderCanvas.height = outerHeight; const borderCtx = portalBorderCanvas.getContext('2d'); for(let y=0; y<outerHeight; y++) for(let x=0; x<outerWidth; x++) if (x<PORTAL_BORDER_SIZE || x>=outerWidth-PORTAL_BORDER_SIZE || y<PORTAL_BORDER_SIZE || y>=outerHeight-PORTAL_BORDER_SIZE) if(getStaticNoiseValue(x,y)>128) { const lightness=15+Math.random()*15; borderCtx.fillStyle=`hsl(0, 75%, ${lightness}%)`; borderCtx.fillRect(x,y,1,1); } portalNoiseMaskCanvas = document.createElement('canvas'); portalNoiseMaskCanvas.width = portal.width; portalNoiseMaskCanvas.height = portal.height; const maskCtx = portalNoiseMaskCanvas.getContext('2d'); for (let y=0; y<portal.height; y++) for (let x=0; x<portal.width; x++) if(getStaticNoiseValue(x,y)>128) { maskCtx.fillStyle='black'; maskCtx.fillRect(x,y,1,1); } portalCompositeCanvas = document.createElement('canvas'); portalCompositeCanvas.width = outerWidth; portalCompositeCanvas.height = outerHeight; }
     function drawPortal(time) { if (!portal || !portalCompositeCanvas) return; const pCtx = portalCompositeCanvas.getContext('2d'); const outerWidth = portalCompositeCanvas.width; const outerHeight = portalCompositeCanvas.height; pCtx.clearRect(0, 0, outerWidth, outerHeight); const gradient = pCtx.createLinearGradient(0, PORTAL_BORDER_SIZE, 0, PORTAL_BORDER_SIZE + portal.height); const hue = (time / 20) % 360; gradient.addColorStop(0, `hsla(${hue}, 80%, 40%, 0.8)`); gradient.addColorStop(1, `hsla(${(hue + 40) % 360}, 80%, 40%, 0.8)`); pCtx.fillStyle = gradient; pCtx.fillRect(PORTAL_BORDER_SIZE, PORTAL_BORDER_SIZE, portal.width, portal.height); pCtx.globalCompositeOperation = 'destination-in'; pCtx.drawImage(portalNoiseMaskCanvas, PORTAL_BORDER_SIZE, PORTAL_BORDER_SIZE); pCtx.globalCompositeOperation = 'source-over'; pCtx.drawImage(portalBorderCanvas, 0, 0); const screenX = Math.floor(portal.worldX - camera.x); const screenY = Math.floor(portal.worldY - camera.y); ctx.drawImage(portalCompositeCanvas, screenX - PORTAL_BORDER_SIZE, screenY - PORTAL_BORDER_SIZE); }
     function updateCoins() { [...iceCoins, ...rainbowCoins].forEach(coin => { if (coin.active) { coin.worldX += coin.dx; coin.worldY += coin.dy; const screenLeft = camera.x + coin.radius; const screenRight = camera.x + width - coin.radius; const screenTop = camera.y + coin.radius; const screenBottom = camera.y + height - coin.radius; if (coin.worldX < screenLeft || coin.worldX > screenRight) { coin.dx *= -1; coin.worldX = Math.max(screenLeft, Math.min(coin.worldX, screenRight)); } if (coin.worldY < screenTop || coin.worldY > screenBottom) { coin.dy *= -1; coin.worldY = Math.max(screenTop, Math.min(coin.worldY, screenBottom)); } } }); }
     function drawCoins(time) { ctx.save(); iceCoins.forEach(coin => { if (coin.active) { const screenX = coin.worldX - camera.x; const screenY = coin.worldY - camera.y; ctx.fillStyle = 'black'; ctx.strokeStyle = 'white'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(screenX, screenY, coin.radius, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.fillStyle = 'rgba(255, 255, 255, 0.4)'; ctx.beginPath(); ctx.arc(screenX - coin.radius * 0.3, screenY - coin.radius * 0.3, coin.radius * 0.3, 0, Math.PI * 2); ctx.fill(); } }); rainbowCoins.forEach(coin => { if (coin.active) { const screenX = coin.worldX - camera.x; const screenY = coin.worldY - camera.y; const gradient = ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, coin.radius); const hue = (time / 10) % 360; gradient.addColorStop(0, `hsl(${hue}, 100%, 70%)`); gradient.addColorStop(0.5, `hsl(${(hue + 120) % 360}, 100%, 70%)`); gradient.addColorStop(1, `hsl(${(hue + 240) % 360}, 100%, 70%)`); ctx.fillStyle = gradient; ctx.beginPath(); ctx.arc(screenX, screenY, coin.radius, 0, Math.PI * 2); ctx.fill(); } }); ctx.restore(); }
-    function drawPlayer(time) { const screenX = width / 2, screenY = height / 2; ctx.save(); if (player.isBoosted) { const auraRadius = player.radius + 8 + Math.sin(time / 100) * 3; const gradient = ctx.createRadialGradient(screenX, screenY, player.radius, screenX, screenY, auraRadius); const hue = (time / 15) % 360; gradient.addColorStop(0, `hsla(${hue}, 90%, 70%, 0.5)`); gradient.addColorStop(1, `hsla(${(hue + 60) % 360}, 90%, 70%, 0)`); ctx.fillStyle = gradient; ctx.beginPath(); ctx.arc(screenX, screenY, auraRadius, 0, 2*Math.PI); ctx.fill(); } if (player.isFrozen) { ctx.fillStyle = 'black'; ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(screenX, screenY, player.radius, 0, 2 * Math.PI); ctx.fill(); ctx.stroke(); } else { ctx.beginPath(); ctx.arc(screenX, screenY, player.radius, 0, 2 * Math.PI); ctx.clip(); ctx.translate(screenX, screenY); ctx.rotate(player.rotationAngle); ctx.drawImage(playerTextureCanvas, -player.radius, -player.radius, player.radius * 2, player.radius * 2); } ctx.restore(); }
-    function createBackgroundPattern() { const pS = 1024; bgCanvas.width=pS; bgCanvas.height=pS; const iD=bgCtx.createImageData(pS, pS); const d = iD.data; for(let i=0; i<d.length; i+=4) { const s = getStaticNoiseValue(i%pS, Math.floor(i/pS)); d[i]=s; d[i+1]=s; d[i+2]=s; d[i+3]=255; } bgCtx.putImageData(iD, 0, 0); bgPattern = ctx.createPattern(bgCanvas, 'repeat'); }
+    
+    function drawPlayer(time) {
+        const screenX = width / 2, screenY = height / 2;
+        ctx.save();
+        if (player.isBoosted) { const auraRadius = player.radius + 8 + Math.sin(time / 100) * 3; const gradient = ctx.createRadialGradient(screenX, screenY, player.radius, screenX, screenY, auraRadius); const hue = (time / 15) % 360; gradient.addColorStop(0, `hsla(${hue}, 90%, 70%, 0.5)`); gradient.addColorStop(1, `hsla(${(hue + 60) % 360}, 90%, 70%, 0)`); ctx.fillStyle = gradient; ctx.beginPath(); ctx.arc(screenX, screenY, auraRadius, 0, 2*Math.PI); ctx.fill(); }
+        if (player.isFrozen) {
+            ctx.fillStyle = 'black'; ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)'; ctx.lineWidth = 3;
+            ctx.beginPath(); ctx.arc(screenX, screenY, player.radius, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
+        } else {
+            ctx.fillStyle = 'white';
+            ctx.beginPath(); ctx.arc(screenX, screenY, player.radius, 0, 2 * Math.PI); ctx.fill();
+        }
+        ctx.restore();
+    }
+    
     function clearGame() { if(gameCleared) return; gameCleared = true; setTimeout(() => { init(currentStage + 1); }, STAGE_RESET_DELAY); }
     function launchFireworks() { const numRockets = 12; for (let i = 0; i < numRockets; i++) { setTimeout(() => { rockets.push({ x: Math.random() * width, y: height, dx: Math.random() * 6 - 3, dy: -(Math.random() * 8 + 15), targetY: Math.random() * (height / 2.5), hue: Math.random() * 360 }); }, i * 150); } }
     function createExplosion(x, y, hue) { const particleCount = 40 + Math.random() * 20; for (let i = 0; i < particleCount; i++) { const angle = Math.random() * Math.PI * 2; const speed = Math.random() * 12 + 4; particles.push({ x: x, y: y, dx: Math.cos(angle) * speed, dy: Math.sin(angle) * speed, life: Math.random() * 60 + 60, size: Math.random() * 5 + 4, hue: hue + (Math.random() * 60 - 30) }); } }
@@ -250,11 +260,11 @@ window.onload = function() {
     function generateCoin(type) {
         let dx, dy;
         if (type === 'ice') {
-            dx = (Math.random() - 0.5) * 30;
-            dy = (Math.random() - 0.5) * 15;
+            dx = (Math.random() - 0.5) * 60; // ✨ 속도 2배 증가
+            dy = (Math.random() - 0.5) * 30;
         } else { 
-            dx = (Math.random() - 0.5) * 6;
-            dy = (Math.random() - 0.5) * 3;
+            dx = (Math.random() - 0.5) * 12; // ✨ 속도 2배 증가
+            dy = (Math.random() - 0.5) * 6;
         }
         const newCoin = {
             worldX: camera.x + Math.random() * width,
@@ -315,7 +325,6 @@ window.onload = function() {
         portal = { worldX: portalX, worldY: prevY - portalHeight / 2, width: portalWidth, height: portalHeight, isPhysical: false };
         worldObjects = [ { worldX: -100000, worldY: -10000, width: 200000, height: 20000, isPhysical: false }, ...platforms ];
         
-        if (!bgPattern) { createPlayerTexture(); createBackgroundPattern(); }
         createPortalAssets();
     }
     
