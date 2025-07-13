@@ -207,7 +207,6 @@ window.onload = function() {
     
     init(1);
     
-    // ✨ 게임 루프 시작!
     animate(0);
 };
     </script>
