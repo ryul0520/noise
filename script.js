@@ -1,4 +1,3 @@
-// script.js
 window.onload = function() {
     const canvas = document.getElementById('mainCanvas');
     const ctx = canvas.getContext('2d');
@@ -6,12 +5,12 @@ window.onload = function() {
     let width, height;
     ctx.imageSmoothingEnabled = false;
 
-    // ✨ (밸런스 조정) 플레이어 속도 1.3배로 미세 조정
+    // ✨ (밸런스 조정) 플레이어 속도 절반으로 감소, 코인 속도 2배 증가
     const BASE_GRAVITY = 1.0; 
     const BASE_JUMP_FORCE = -18;
-    const BASE_PLAYER_ACCEL = 1.8 * 1.3; 
+    const BASE_PLAYER_ACCEL = 1.8;      // 플레이어 가속도 (원래 속도로)
     const BASE_FRICTION = 0.90;
-    const BASE_MAX_SPEED = 8 * 1.3;
+    const BASE_MAX_SPEED = 8;         // 플레이어 최대 속도 (원래 속도로)
     
     let GRAVITY = BASE_GRAVITY; 
     let JUMP_FORCE = BASE_JUMP_FORCE; 
@@ -47,7 +46,6 @@ window.onload = function() {
     let rockets = []; 
     let particles = [];
 
-    // ✨ (그래픽 복원) 관련 변수 다시 선언
     const bgCanvas = document.createElement('canvas'), bgCtx = bgCanvas.getContext('2d');
     let bgPattern;
     const playerTextureCanvas = document.createElement('canvas'); 
@@ -74,8 +72,7 @@ window.onload = function() {
     
     function handleTouches(e) { 
         e.preventDefault(); 
-        isTouchingLeft = false; 
-        isTouchingRight = false; 
+        isTouchingLeft = false; isTouchingRight = false; 
         for (let i = 0; i < e.touches.length; i++) { 
             const touch = e.touches[i]; 
             if (touch.clientX > resetButton.x && touch.clientX < resetButton.x + resetButton.width &&
@@ -101,10 +98,8 @@ window.onload = function() {
 
     function getStaticNoiseValue(x, y) { let seed = Math.floor(x) * 1357 + Math.floor(y) * 2468; let t = seed += 1831565813; t = Math.imul(t ^ t >>> 15, 1 | t); t ^= t + Math.imul(t ^ t >>> 7, 61 | t); return ((t ^ t >>> 14) >>> 0) % 2 === 0 ? 0 : 255; }
     
-    // ✨ (그래픽 복원) 플레이어 텍스처 생성 함수
     function createPlayerTexture() { 
-        playerTextureCanvas.width = PLAYER_TEXTURE_SIZE; 
-        playerTextureCanvas.height = PLAYER_TEXTURE_SIZE;
+        playerTextureCanvas.width = PLAYER_TEXTURE_SIZE; playerTextureCanvas.height = PLAYER_TEXTURE_SIZE;
         const iD = pTextureCtx.createImageData(PLAYER_TEXTURE_SIZE,PLAYER_TEXTURE_SIZE); 
         const d = iD.data; 
         for (let i = 0; i < d.length; i+=4) { 
@@ -146,7 +141,6 @@ window.onload = function() {
     function checkPlatformCollision(p, plat) { const cX = Math.max(plat.worldX, Math.min(p.worldX, plat.worldX + plat.width)); const cY = Math.max(plat.worldY, Math.min(p.worldY, plat.worldY + plat.height)); return ((p.worldX - cX)**2 + (p.worldY - cY)**2) < (p.radius**2); }
     function resetPlayer() { if (highestX > sessionRecordX) { sessionRecordX = highestX; saveGameState(); } highestX = 0; updateRecordPlatform(); player.worldX = player.initialX; player.worldY = player.initialY; player.dx = 0; player.dy = 0; player.isFrozen = false; player.freezeEndTime = 0; player.isBoosted = false; player.boostEndTime = 0; MAX_SPEED = BASE_MAX_SPEED; JUMP_FORCE = BASE_JUMP_FORCE; PLAYER_ACCEL = BASE_PLAYER_ACCEL; }
     
-    // ✨ (그래픽 복원) 배경 그리기 로직 복원
     function renderWorld() { 
         ctx.save(); 
         ctx.translate(-(camera.x * 0.2) % 1024, -(camera.y * 0.2) % 1024); 
@@ -174,7 +168,6 @@ window.onload = function() {
     function updateCoins() { [...iceCoins, ...rainbowCoins].forEach(coin => { if (coin.active) { coin.worldX += coin.dx; coin.worldY += coin.dy; const screenLeft = camera.x + coin.radius; const screenRight = camera.x + width - coin.radius; const screenTop = camera.y + coin.radius; const screenBottom = camera.y + height - coin.radius; if (coin.worldX < screenLeft || coin.worldX > screenRight) { coin.dx *= -1; coin.worldX = Math.max(screenLeft, Math.min(coin.worldX, screenRight)); } if (coin.worldY < screenTop || coin.worldY > screenBottom) { coin.dy *= -1; coin.worldY = Math.max(screenTop, Math.min(coin.worldY, screenBottom)); } } }); }
     function drawCoins(time) { ctx.save(); iceCoins.forEach(coin => { if (coin.active) { const screenX = coin.worldX - camera.x; const screenY = coin.worldY - camera.y; ctx.fillStyle = 'black'; ctx.strokeStyle = 'white'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(screenX, screenY, coin.radius, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.fillStyle = 'rgba(255, 255, 255, 0.4)'; ctx.beginPath(); ctx.arc(screenX - coin.radius * 0.3, screenY - coin.radius * 0.3, coin.radius * 0.3, 0, Math.PI * 2); ctx.fill(); } }); rainbowCoins.forEach(coin => { if (coin.active) { const screenX = coin.worldX - camera.x; const screenY = coin.worldY - camera.y; const gradient = ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, coin.radius); const hue = (time / 10) % 360; gradient.addColorStop(0, `hsl(${hue}, 100%, 70%)`); gradient.addColorStop(0.5, `hsl(${(hue + 120) % 360}, 100%, 70%)`); gradient.addColorStop(1, `hsl(${(hue + 240) % 360}, 100%, 70%)`); ctx.fillStyle = gradient; ctx.beginPath(); ctx.arc(screenX, screenY, coin.radius, 0, Math.PI * 2); ctx.fill(); } }); ctx.restore(); }
     
-    // ✨ (그래픽 복원) 플레이어 그리기 로직 복원
     function drawPlayer(time) { 
         const screenX = width / 2, screenY = height / 2; 
         ctx.save(); 
@@ -208,21 +201,7 @@ window.onload = function() {
         ctx.restore(); 
     }
 
-    // ✨ (그래픽 복원) 배경 생성 함수 복원
-    function createBackgroundPattern() { 
-        const pS = 1024; 
-        bgCanvas.width=pS; 
-        bgCanvas.height=pS; 
-        const iD=bgCtx.createImageData(pS, pS); 
-        const d = iD.data; 
-        for(let i=0; i<d.length; i+=4) { 
-            const s = getStaticNoiseValue(i%pS, Math.floor(i/pS)); 
-            d[i]=s; d[i+1]=s; d[i+2]=s; d[i+3]=255; 
-        } 
-        bgCtx.putImageData(iD, 0, 0); 
-        bgPattern = ctx.createPattern(bgCanvas, 'repeat'); 
-    }
-
+    function createBackgroundPattern() { const pS = 1024; bgCanvas.width=pS; bgCanvas.height=pS; const iD=bgCtx.createImageData(pS, pS); const d = iD.data; for(let i=0; i<d.length; i+=4) { const s = getStaticNoiseValue(i%pS, Math.floor(i/pS)); d[i]=s; d[i+1]=s; d[i+2]=s; d[i+3]=255; } bgCtx.putImageData(iD, 0, 0); bgPattern = ctx.createPattern(bgCanvas, 'repeat'); }
     function clearGame() { if(gameCleared) return; gameCleared = true; currentStage++; saveGameState(); setTimeout(() => { init(currentStage); }, STAGE_RESET_DELAY); }
     function launchFireworks() { const numRockets = 12; for (let i = 0; i < numRockets; i++) { setTimeout(() => { rockets.push({ x: Math.random() * width, y: height, dx: Math.random() * 6 - 3, dy: -(Math.random() * 8 + 15), targetY: Math.random() * (height / 2.5), hue: Math.random() * 360 }); }, i * 150); } }
     function createExplosion(x, y, hue) { const particleCount = 40 + Math.random() * 20; for (let i = 0; i < particleCount; i++) { const angle = Math.random() * Math.PI * 2; const speed = Math.random() * 12 + 4; particles.push({ x: x, y: y, dx: Math.cos(angle) * speed, dy: Math.sin(angle) * speed, life: Math.random() * 60 + 60, size: Math.random() * 5 + 4, hue: hue + (Math.random() * 60 - 30) }); } }
@@ -287,9 +266,7 @@ window.onload = function() {
         updateControlButtonsPosition();
         gameCleared = false; fireworksLaunched = false;
         rockets = []; particles = []; highestX = 0;
-        
-        // ✨ init에서는 recordPlatform만 초기화, sessionRecordX는 유지
-        recordPlatform = null; 
+        recordPlatform = null;
 
         const startPlatformY = height - 100;
         resetPlayer();
@@ -329,16 +306,15 @@ window.onload = function() {
         createPortalAssets();
     }
     
-    // ✨ 모든 리소스와 변수가 정의된 후 게임 시작
+    window.addEventListener('resize', () => init(currentStage));
+    
+    // ✨ 모든 리소스/변수/함수가 정의된 후 게임 시작
     createPlayerTexture();
     createBackgroundPattern(); 
     
-    window.addEventListener('resize', () => init(currentStage));
+    loadGameState(); 
+    init(currentStage); 
     
-    loadGameState(); // 저장된 게임 불러오기
-    init(currentStage); // 불러온 스테이지로 시작
-    
-    // 코인 생성 관리자는 페이지 로드 시 단 한 번만 설정
     if (!spawnCheckTimer) {
         spawnCheckTimer = setInterval(spawnManager, SPAWN_CHECK_INTERVAL);
     }
