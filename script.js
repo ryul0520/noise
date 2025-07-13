@@ -1,3 +1,6 @@
+// script.js
+
+// ✨ 모든 코드를 전역 스코프에 배치하고, 실행 순서를 명확하게 제어
 const canvas = document.getElementById('mainCanvas');
 const ctx = canvas.getContext('2d');
 
@@ -211,8 +214,6 @@ function drawControlButtons() { const bS = 'rgba(255, 255, 255, 0.35)'; const br
 
     function init(stageLevel = 1) {
         currentStage = stageLevel;
-        width = canvas.width = window.innerWidth; height = canvas.height = window.innerHeight;
-        updateControlButtonsPosition();
         gameCleared = false; fireworksLaunched = false;
         rockets = []; particles = []; highestX = 0;
         recordPlatform = null; 
@@ -261,13 +262,22 @@ function drawControlButtons() { const bS = 'rgba(255, 255, 255, 0.35)'; const br
         createPortalAssets();
     }
     
-    window.addEventListener('resize', () => init(currentStage));
+    // ✨ (실행 순서 수정) resize 핸들러를 먼저 설정
+    function resizeHandler() {
+        width = canvas.width = window.innerWidth;
+        height = canvas.height = window.innerHeight;
+        updateControlButtonsPosition();
+        init(currentStage); // 창 크기가 바뀔 때마다 현재 스테이지를 다시 그림
+    }
     
+    window.addEventListener('resize', resizeHandler);
+    
+    // ✨ 모든 리소스/변수/함수가 정의된 후 게임 시작
     createPlayerTexture();
     createBackgroundPattern(); 
     
     loadGameState(); 
-    init(currentStage); 
+    resizeHandler(); // 초기 로드 시에도 호출하여 크기 설정 및 init 실행
     
     animate(0);
 };
