@@ -91,38 +91,49 @@ window.onload = function() {
         resetButton.y = 40;
     }
     
-    function handleTouches(e) { 
-        e.preventDefault(); 
-        isTouchingLeft = false; 
-        isTouchingRight = false; 
+    // ✨ 수정된 터치 핸들링 함수
+    function handleTouches(e) {
+        e.preventDefault();
 
-        // ✨ 'e.touches'는 현재 화면에 있는 모든 터치 목록입니다.
-        // 이 목록을 순회하며 각 버튼의 상태를 결정합니다.
-        for (let i = 0; i < e.touches.length; i++) { 
-            const touch = e.touches[i]; 
-            const distJump = Math.sqrt((touch.clientX - jumpButton.x)**2 + (touch.clientY - jumpButton.y)**2); 
-            if (distJump < jumpButton.radius) { 
-                // ✨ 점프는 한 번만 인식되어야 하므로 e.type으로 구분
-                if (e.type === 'touchstart') handleJumpInput();
-                continue; 
-            } 
-            const distLeft = Math.sqrt((touch.clientX - leftButton.x)**2 + (touch.clientY - leftButton.y)**2); 
-            if (distLeft < leftButton.radius) { 
-                isTouchingLeft = true; 
-                continue; 
-            } 
-            const distRight = Math.sqrt((touch.clientX - rightButton.x)**2 + (touch.clientY - rightButton.y)**2); 
-            if (distRight < rightButton.radius) { 
-                isTouchingRight = true; 
-                continue; 
+        // 점프, 리셋과 같이 터치가 시작될 때 '한 번만' 발동해야 하는 액션을 처리합니다.
+        // 'e.changedTouches'는 이번 이벤트에서 새로 시작된 터치만 포함하므로,
+        // 다른 버튼을 누르고 있는 상태에서 새 버튼을 눌러도 기존 버튼의 액션이 다시 발동하지 않습니다.
+        if (e.type === 'touchstart') {
+            for (let i = 0; i < e.changedTouches.length; i++) {
+                const touch = e.changedTouches[i];
+
+                const distJump = Math.sqrt((touch.clientX - jumpButton.x)**2 + (touch.clientY - jumpButton.y)**2);
+                if (distJump < jumpButton.radius) {
+                    handleJumpInput();
+                }
+
+                const distReset = Math.sqrt((touch.clientX - resetButton.x)**2 + (touch.clientY - resetButton.y)**2);
+                if (distReset < resetButton.radius) {
+                    resetGame();
+                }
             }
-            const distReset = Math.sqrt((touch.clientX - resetButton.x)**2 + (touch.clientY - resetButton.y)**2);
-            if (distReset < resetButton.radius) {
-                // ✨ 리셋도 한 번만 인식
-                if (e.type === 'touchstart') resetGame();
-                continue;
+        }
+        
+        // 이동과 같이 '누르고 있는 동안' 계속 유지되어야 하는 상태를 업데이트합니다.
+        // 'e.touches'는 현재 화면에 있는 모든 터치 목록을 담고 있습니다.
+        // touchstart, touchmove, touchend 이벤트가 발생할 때마다 이 목록을 확인하여
+        // 현재 어떤 버튼들이 눌려있는지 정확하게 상태를 갱신합니다.
+        isTouchingLeft = false;
+        isTouchingRight = false;
+
+        for (let i = 0; i < e.touches.length; i++) {
+            const touch = e.touches[i];
+            
+            const distLeft = Math.sqrt((touch.clientX - leftButton.x)**2 + (touch.clientY - leftButton.y)**2);
+            if (distLeft < leftButton.radius) {
+                isTouchingLeft = true;
             }
-        } 
+
+            const distRight = Math.sqrt((touch.clientX - rightButton.x)**2 + (touch.clientY - rightButton.y)**2);
+            if (distRight < rightButton.radius) {
+                isTouchingRight = true;
+            }
+        }
     }
     
     window.addEventListener('keydown', (e) => {
@@ -134,11 +145,9 @@ window.onload = function() {
     });
     window.addEventListener('keyup', (e) => { keys[e.code.toLowerCase()] = false; });
 
-    // ✨ 터치 이벤트 리스너 통합 및 수정
+    // ✨ 터치 이벤트 리스너: 모든 터치 관련 이벤트를 handleTouches 함수 하나로 처리하여 상태를 일관되게 관리합니다.
     window.addEventListener('touchstart', handleTouches, { passive: false }); 
     window.addEventListener('touchmove', handleTouches, { passive: false }); 
-    // ✨ touchend 이벤트 발생 시, 남아있는 터치들을 기준으로 버튼 상태를 다시 계산하여
-    // ✨ 다중 터치 시 이동이 끊기는 현상을 방지하고 반응성을 높입니다.
     window.addEventListener('touchend', handleTouches, { passive: false });
 
     window.addEventListener('click', (e) => {
