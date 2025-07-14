@@ -46,6 +46,13 @@ window.onload = function() {
     let rockets = []; 
     let particles = [];
     
+    const bgCanvas = document.createElement('canvas'), bgCtx = bgCanvas.getContext('2d');
+    let bgPattern;
+    const playerTextureCanvas = document.createElement('canvas');
+    const pTextureCtx = playerTextureCanvas.getContext('2d');
+    playerTextureCanvas.width = PLAYER_TEXTURE_SIZE;
+    playerTextureCanvas.height = PLAYER_TEXTURE_SIZE;
+
     let portalBorderCanvas, portalNoiseMaskCanvas, portalCompositeCanvas;
 
     const keys = {};
@@ -101,6 +108,30 @@ window.onload = function() {
 
     function getStaticNoiseValue(x, y) { let seed = Math.floor(x) * 1357 + Math.floor(y) * 2468; let t = seed += 1831565813; t = Math.imul(t ^ t >>> 15, 1 | t); t ^= t + Math.imul(t ^ t >>> 7, 61 | t); return ((t ^ t >>> 14) >>> 0) % 2 === 0 ? 0 : 255; }
     
+    function createPlayerTexture() { 
+        const iD = pTextureCtx.createImageData(PLAYER_TEXTURE_SIZE, PLAYER_TEXTURE_SIZE);
+        const d = iD.data;
+        for (let i = 0; i < d.length; i+=4) {
+            const s = Math.random() < 0.5 ? 0 : 255;
+            d[i]=s; d[i+1]=s; d[i+2]=s; d[i+3]=255;
+        }
+        pTextureCtx.putImageData(iD, 0, 0);
+    }
+    
+    function createBackgroundPattern() {
+        const pS = 1024;
+        bgCanvas.width=pS;
+        bgCanvas.height=pS;
+        const iD=bgCtx.createImageData(pS, pS);
+        const d = iD.data;
+        for(let i=0; i<d.length; i+=4) {
+            const s = getStaticNoiseValue(i%pS, Math.floor(i/pS));
+            d[i]=s; d[i+1]=s; d[i+2]=s; d[i+3]=255;
+        }
+        bgCtx.putImageData(iD, 0, 0);
+        bgPattern = ctx.createPattern(bgCanvas, 'repeat');
+    }
+
     function updatePlayer(time) {
         if (gameCleared) return;
         if (player.isFrozen) { 
@@ -190,17 +221,26 @@ window.onload = function() {
     function checkPlatformCollision(p, plat) { const cX = Math.max(plat.worldX, Math.min(p.worldX, plat.worldX + plat.width)); const cY = Math.max(plat.worldY, Math.min(p.worldY, plat.worldY + plat.height)); return ((p.worldX - cX)**2 + (p.worldY - cY)**2) < (p.radius**2); }
     function resetPlayer() { if (highestX > sessionRecordX) sessionRecordX = highestX; highestX = 0; updateRecordPlatform(); player.worldX = player.initialX; player.worldY = player.initialY; player.dx = 0; player.dy = 0; player.isFrozen = false; player.freezeEndTime = 0; player.isBoosted = false; player.boostEndTime = 0; MAX_SPEED = BASE_MAX_SPEED; JUMP_FORCE = BASE_JUMP_FORCE; PLAYER_ACCEL = BASE_PLAYER_ACCEL; }
     
-    function renderWorld() { 
-        ctx.fillStyle = '#000'; 
-        ctx.fillRect(0, 0, width, height);
-        
+    function renderWorld() {
+        ctx.save();
+        ctx.translate(-(camera.x * 0.2) % 1024, -(camera.y * 0.2) % 1024);
+        ctx.fillStyle = bgPattern;
+        ctx.fillRect((camera.x * 0.2) % 1024, (camera.y * 0.2) % 1024, width + 1024, height + 1024);
+        ctx.restore();
+
         const physicalObjects = worldObjects.filter(o => o.isPhysical);
         physicalObjects.forEach(obj => {
-            const screenX = Math.floor(obj.worldX - camera.x); 
+            const screenX = Math.floor(obj.worldX - camera.x);
             const screenY = Math.floor(obj.worldY - camera.y);
             if (screenX + obj.width < 0 || screenX > width || screenY + obj.height < 0 || screenY > height) return;
-            ctx.fillStyle = '#222';
-            ctx.fillRect(screenX, screenY, obj.width, obj.height);
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(screenX, screenY, obj.width, obj.height);
+            ctx.clip();
+            ctx.translate(-(camera.x % 1024), -(camera.y % 1024));
+            ctx.fillStyle = bgPattern;
+            ctx.fillRect(camera.x % 1024, camera.y % 1024, width + 1024, height + 1024);
+            ctx.restore();
         });
     }
 
@@ -212,13 +252,32 @@ window.onload = function() {
     function drawPlayer(time) {
         const screenX = width / 2, screenY = height / 2;
         ctx.save();
-        if (player.isBoosted) { const auraRadius = player.radius + 8 + Math.sin(time / 100) * 3; const gradient = ctx.createRadialGradient(screenX, screenY, player.radius, screenX, screenY, auraRadius); const hue = (time / 15) % 360; gradient.addColorStop(0, `hsla(${hue}, 90%, 70%, 0.5)`); gradient.addColorStop(1, `hsla(${(hue + 60) % 360}, 90%, 70%, 0)`); ctx.fillStyle = gradient; ctx.beginPath(); ctx.arc(screenX, screenY, auraRadius, 0, 2*Math.PI); ctx.fill(); }
+        if (player.isBoosted) {
+            const auraRadius = player.radius + 8 + Math.sin(time / 100) * 3;
+            const gradient = ctx.createRadialGradient(screenX, screenY, player.radius, screenX, screenY, auraRadius);
+            const hue = (time / 15) % 360;
+            gradient.addColorStop(0, `hsla(${hue}, 90%, 70%, 0.5)`);
+            gradient.addColorStop(1, `hsla(${(hue + 60) % 360}, 90%, 70%, 0)`);
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, auraRadius, 0, 2 * Math.PI);
+            ctx.fill();
+        }
         if (player.isFrozen) {
-            ctx.fillStyle = 'black'; ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)'; ctx.lineWidth = 3;
-            ctx.beginPath(); ctx.arc(screenX, screenY, player.radius, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
+            ctx.fillStyle = 'black';
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, player.radius, 0, 2 * Math.PI);
+            ctx.fill();
+            ctx.stroke();
         } else {
-            ctx.fillStyle = 'white';
-            ctx.beginPath(); ctx.arc(screenX, screenY, player.radius, 0, 2 * Math.PI); ctx.fill();
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, player.radius, 0, 2 * Math.PI);
+            ctx.clip();
+            ctx.translate(screenX, screenY);
+            ctx.rotate(player.rotationAngle);
+            ctx.drawImage(playerTextureCanvas, -player.radius, -player.radius, player.radius * 2, player.radius * 2);
         }
         ctx.restore();
     }
@@ -227,7 +286,35 @@ window.onload = function() {
     function launchFireworks() { const numRockets = 12; for (let i = 0; i < numRockets; i++) { setTimeout(() => { rockets.push({ x: Math.random() * width, y: height, dx: Math.random() * 6 - 3, dy: -(Math.random() * 8 + 15), targetY: Math.random() * (height / 2.5), hue: Math.random() * 360 }); }, i * 150); } }
     function createExplosion(x, y, hue) { const particleCount = 40 + Math.random() * 20; for (let i = 0; i < particleCount; i++) { const angle = Math.random() * Math.PI * 2; const speed = Math.random() * 12 + 4; particles.push({ x: x, y: y, dx: Math.cos(angle) * speed, dy: Math.sin(angle) * speed, life: Math.random() * 60 + 60, size: Math.random() * 5 + 4, hue: hue + (Math.random() * 60 - 30) }); } }
     function updateAndDrawClearEffects() { if (!fireworksLaunched) { launchFireworks(); fireworksLaunched = true; } for (let i = rockets.length - 1; i >= 0; i--) { const r = rockets[i]; r.x += r.dx; r.y += r.dy; r.dy += 0.2; ctx.fillStyle = `hsl(${r.hue}, 100%, 75%)`; ctx.beginPath(); ctx.arc(r.x, r.y, 3, 0, Math.PI * 2); ctx.fill(); if (r.y <= r.targetY) { createExplosion(r.x, r.y, r.hue); rockets.splice(i, 1); } } let lastCompositeOperation = ctx.globalCompositeOperation; ctx.globalCompositeOperation = 'lighter'; for (let i = particles.length - 1; i >= 0; i--) { const p = particles[i]; p.x += p.dx; p.y += p.dy; p.dy += GRAVITY * 0.08; p.dx *= 0.98; p.life--; if (p.life <= 0) { particles.splice(i, 1); continue; } ctx.fillStyle = `hsla(${p.hue}, 100%, 70%, ${p.life / 90})`; ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill(); } ctx.globalCompositeOperation = lastCompositeOperation; ctx.font = 'bold 70px sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = 'white'; ctx.strokeStyle = 'rgba(0,0,0,0.7)'; ctx.lineWidth = 8; ctx.strokeText('NEXT STAGE', width / 2, height / 2); ctx.fillText('NEXT STAGE', width / 2, height / 2); }
-    function drawStageUI() { const rD = rightButton.x + rightButton.radius; const lJ = jumpButton.x - jumpButton.radius; const cX = rD + (lJ - rD) / 2; const cY = jumpButton.y; const bW = 160; const bH = 50; const mW = 110; const mH = 40; const wR = 8 * (currentStage - 1); const hR = 2 * (currentStage - 1); const uW = Math.max(mW, bW - wR); const uH = Math.max(mH, bH - hR); ctx.fillStyle = 'rgba(0, 0, 0, 0.4)'; ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)'; ctx.lineWidth = 2; ctx.fillRect(cX - uW / 2, cY - uH / 2, uW, uH); ctx.strokeRect(cX - uW / 2, cY - uH / 2, uW, uH); ctx.font = 'bold 22px sans-serif'; ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('STAGE ' + currentStage, cX, cY); }
+    
+    // ✨ [수정 완료] 스테이지 UI를 화면 위쪽 중앙에 그리는 함수
+    function drawStageUI() {
+        // ✨ 화면 위쪽 중앙에 위치하도록 좌표 계산 수정
+        const cX = width / 2; // 화면의 가로 중앙
+        const cY = 40;        // 화면 위쪽에서 40px 아래
+
+        const bW = 160;
+        const bH = 50;
+        const mW = 110;
+        const mH = 40;
+        const wR = 8 * (currentStage - 1);
+        const hR = 2 * (currentStage - 1);
+        const uW = Math.max(mW, bW - wR);
+        const uH = Math.max(mH, bH - hR);
+        
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+        ctx.lineWidth = 2;
+        ctx.fillRect(cX - uW / 2, cY - uH / 2, uW, uH);
+        ctx.strokeRect(cX - uW / 2, cY - uH / 2, uW, uH);
+        
+        ctx.font = 'bold 22px sans-serif';
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('STAGE ' + currentStage, cX, cY);
+    }
+
     function drawControlButtons() { const bS = 'rgba(255, 255, 255, 0.35)'; const brS = 'rgba(255, 255, 255, 0.7)'; const iS = 'rgba(255, 255, 255, 0.9)'; ctx.lineWidth = 2; ctx.fillStyle = bS; ctx.strokeStyle = brS; ctx.beginPath(); ctx.arc(jumpButton.x, jumpButton.y, jumpButton.radius, 0, 2*Math.PI); ctx.fill(); ctx.stroke(); ctx.fillStyle = iS; ctx.beginPath(); ctx.moveTo(jumpButton.x, jumpButton.y-jumpButton.radius*0.4); ctx.lineTo(jumpButton.x-jumpButton.radius*0.5, jumpButton.y+jumpButton.radius*0.3); ctx.lineTo(jumpButton.x+jumpButton.radius*0.5, jumpButton.y+jumpButton.radius*0.3); ctx.closePath(); ctx.fill(); ctx.fillStyle = bS; ctx.strokeStyle = brS; ctx.beginPath(); ctx.arc(leftButton.x, leftButton.y, leftButton.radius, 0, 2*Math.PI); ctx.fill(); ctx.stroke(); ctx.fillStyle = iS; ctx.beginPath(); ctx.moveTo(leftButton.x-leftButton.radius*0.4, leftButton.y); ctx.lineTo(leftButton.x+leftButton.radius*0.4, leftButton.y-leftButton.radius*0.5); ctx.lineTo(leftButton.x+leftButton.radius*0.4, leftButton.y+leftButton.radius*0.5); ctx.closePath(); ctx.fill(); ctx.fillStyle = bS; ctx.strokeStyle = brS; ctx.beginPath(); ctx.arc(rightButton.x, rightButton.y, rightButton.radius, 0, 2*Math.PI); ctx.fill(); ctx.stroke(); ctx.fillStyle = iS; ctx.beginPath(); ctx.moveTo(rightButton.x+rightButton.radius*0.4, rightButton.y); ctx.lineTo(rightButton.x-rightButton.radius*0.4, rightButton.y-rightButton.radius*0.5); ctx.lineTo(rightButton.x-rightButton.radius*0.4, rightButton.y+rightButton.radius*0.5); ctx.closePath(); ctx.fill(); }
     function drawRecordFlag() { if (!recordPlatform) return; const fW = 40, fH = 25, pH = 50, pWd = 2; const pCX = recordPlatform.worldX + recordPlatform.width / 2; const pTY = recordPlatform.worldY; const sPX = Math.floor(pCX - camera.x); const sPTY = Math.floor(pTY - pH - camera.y); if (sPX + fW < 0 || sPX - pWd > width) return; const pID = ctx.createImageData(pWd, pH); const pD = pID.data; for (let y = 0; y < pH; y++) for (let x = 0; x < pWd; x++) { const s=getStaticNoiseValue(x, y+100); const i=(y*pWd+x)*4; pD[i]=s; pD[i+1]=s; pD[i+2]=s; pD[i+3]=255; } ctx.putImageData(pID, sPX - Math.floor(pWd/2), sPTY); const fID = ctx.createImageData(fW, fH); const fD = fID.data; for (let y = 0; y < fH; y++) for (let x = 0; x < fW; x++) { const s=getStaticNoiseValue(x, y); const i=(y*fW+x)*4; fD[i]=s; fD[i+1]=s; fD[i+2]=s; fD[i+3]=255; } ctx.putImageData(fID, sPX, sPTY); }
     function updateRecordPlatform() { const phys = worldObjects.filter(o => o.isPhysical); let best = null; for (const p of phys) { if (p.worldX <= sessionRecordX) best = p; else break; } recordPlatform = best; }
@@ -325,13 +412,11 @@ window.onload = function() {
         portal = { worldX: portalX, worldY: prevY - portalHeight / 2, width: portalWidth, height: portalHeight, isPhysical: false };
         worldObjects = [ { worldX: -100000, worldY: -10000, width: 200000, height: 20000, isPhysical: false }, ...platforms ];
         
-        // ✨ init 함수에서는 더 이상 텍스처를 생성하지 않음.
         createPortalAssets();
     }
     
-    // ✨ 모든 리소스/변수/함수가 정의된 후 게임 시작
     createPlayerTexture();
-    createBackgroundPattern(); // 이제 이 함수는 전역에 존재
+    createBackgroundPattern(); 
     
     window.addEventListener('resize', () => init(currentStage));
     init(1);
