@@ -96,11 +96,14 @@ window.onload = function() {
         isTouchingLeft = false; 
         isTouchingRight = false; 
 
+        // ✨ 'e.touches'는 현재 화면에 있는 모든 터치 목록입니다.
+        // 이 목록을 순회하며 각 버튼의 상태를 결정합니다.
         for (let i = 0; i < e.touches.length; i++) { 
             const touch = e.touches[i]; 
             const distJump = Math.sqrt((touch.clientX - jumpButton.x)**2 + (touch.clientY - jumpButton.y)**2); 
             if (distJump < jumpButton.radius) { 
-                handleJumpInput();
+                // ✨ 점프는 한 번만 인식되어야 하므로 e.type으로 구분
+                if (e.type === 'touchstart') handleJumpInput();
                 continue; 
             } 
             const distLeft = Math.sqrt((touch.clientX - leftButton.x)**2 + (touch.clientY - leftButton.y)**2); 
@@ -115,7 +118,8 @@ window.onload = function() {
             }
             const distReset = Math.sqrt((touch.clientX - resetButton.x)**2 + (touch.clientY - resetButton.y)**2);
             if (distReset < resetButton.radius) {
-                resetGame();
+                // ✨ 리셋도 한 번만 인식
+                if (e.type === 'touchstart') resetGame();
                 continue;
             }
         } 
@@ -130,12 +134,12 @@ window.onload = function() {
     });
     window.addEventListener('keyup', (e) => { keys[e.code.toLowerCase()] = false; });
 
+    // ✨ 터치 이벤트 리스너 통합 및 수정
     window.addEventListener('touchstart', handleTouches, { passive: false }); 
     window.addEventListener('touchmove', handleTouches, { passive: false }); 
-    window.addEventListener('touchend', (e) => { 
-        isTouchingLeft = false;
-        isTouchingRight = false;
-    }, { passive: false });
+    // ✨ touchend 이벤트 발생 시, 남아있는 터치들을 기준으로 버튼 상태를 다시 계산하여
+    // ✨ 다중 터치 시 이동이 끊기는 현상을 방지하고 반응성을 높입니다.
+    window.addEventListener('touchend', handleTouches, { passive: false });
 
     window.addEventListener('click', (e) => {
         const distReset = Math.sqrt((e.clientX - resetButton.x)**2 + (e.clientY - resetButton.y)**2);
@@ -361,6 +365,8 @@ window.onload = function() {
     }
 
     function updateProjectiles() {
+        const projectileSpeedMultiplier = 1 + (currentStage - 1) * 0.08;
+
         for (let i = hostileProjectiles.length - 1; i >= 0; i--) {
             const p = hostileProjectiles[i];
             
@@ -377,16 +383,17 @@ window.onload = function() {
             const dist = Math.sqrt(dirX * dirX + dirY * dirY);
 
             if (dist > 1) {
-                p.dx += (dirX / dist) * 0.225; 
+                p.dx += (dirX / dist) * 0.225 * projectileSpeedMultiplier; 
                 if (dirY > 0) {
-                     p.dy += (dirY / dist) * 0.1125;
+                     p.dy += (dirY / dist) * 0.1125 * projectileSpeedMultiplier;
                 }
             }
             
             const speed = Math.sqrt(p.dx * p.dx + p.dy * p.dy);
-            if (speed > 15) {
-                p.dx = (p.dx / speed) * 15;
-                p.dy = (p.dy / speed) * 15;
+            const maxSpeed = 15 * projectileSpeedMultiplier;
+            if (speed > maxSpeed) {
+                p.dx = (p.dx / speed) * maxSpeed;
+                p.dy = (p.dy / speed) * maxSpeed;
             }
 
             p.worldX += p.dx;
@@ -573,9 +580,9 @@ window.onload = function() {
     function generateCoin(type) {
         let dx, dy;
         const stageSpeedMultiplier = 1 + (currentStage - 1) * 0.15;
-        // ✨ 모든 코인 속도 통합 (빨강 기준 * 0.8) 및 2.5배 추가 증가
-        const baseSpeedX = 64 * 2.5; 
-        const baseSpeedY = 32 * 2.5; 
+        // ✨ 코인 속도를 현재의 0.7배로 조정
+        const baseSpeedX = 28;
+        const baseSpeedY = 14; 
 
         dx = (Math.random() - 0.5) * baseSpeedX * stageSpeedMultiplier;
         dy = (Math.random() - 0.5) * baseSpeedY * stageSpeedMultiplier;
