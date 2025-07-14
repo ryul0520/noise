@@ -25,9 +25,9 @@ window.onload = function() {
     const STAGE_RESET_DELAY = 3000;
     
     const SPAWN_CHECK_INTERVAL = 4000;
-    const MAX_ICE_COINS = 2;
+    const MAX_ICE_COINS = 3;
     const MAX_RAINBOW_COINS = 1;
-    const MAX_RED_COINS = 1; // ✨ 빨간 코인 최대 개수
+    const MAX_RED_COINS = 2;
     const RAINBOW_PLATFORM_CHANCE = 0.0375;
 
     const player = {
@@ -36,6 +36,7 @@ window.onload = function() {
         isFrozen: false, freezeEndTime: 0,
         isBoosted: false, boostEndTime: 0,
         standingOnPlatform: null,
+        isDead: false,
     };
 
     let jumpBufferTime = 0;
@@ -46,10 +47,12 @@ window.onload = function() {
     let worldObjects = [], portal = null;
     let iceCoins = []; 
     let rainbowCoins = [];
-    let redCoins = []; // ✨ 빨간 코인 배열
-    let hostileProjectiles = []; // ✨ 공격 발사체 배열
+    let redCoins = [];
+    let hostileProjectiles = [];
+    let attackEvents = [];
     let spawnCheckTimer = null; 
     let highestX = 0; 
+    let currentMapSeed = 0;
 
     let currentStage = 1; 
     let gameCleared = false; 
@@ -183,7 +186,7 @@ window.onload = function() {
     }
 
     function updatePlayer(time) {
-        if (gameCleared) return;
+        if (gameCleared || player.isDead) return;
         
         JUMP_FORCE = BASE_JUMP_FORCE;
         PLAYER_ACCEL = BASE_PLAYER_ACCEL;
@@ -256,13 +259,20 @@ window.onload = function() {
         
         for (const coin of iceCoins) { if (coin.active) { const distSq = (player.worldX - coin.worldX)**2 + (player.worldY - coin.worldY)**2; if (distSq < (player.radius + coin.radius)**2) { coin.active = false; player.isFrozen = true; player.freezeEndTime = time + 3000; player.dx = 0; player.dy = 0; } } }
         for (const coin of rainbowCoins) { if (coin.active) { const distSq = (player.worldX - coin.worldX)**2 + (player.worldY - coin.worldY)**2; if (distSq < (player.radius + coin.radius)**2) { coin.active = false; player.isBoosted = true; player.boostEndTime = time + 5000; } } }
-        // ✨ 빨간 코인 충돌 처리
-        for (const coin of redCoins) { if (coin.active) { const distSq = (player.worldX - coin.worldX)**2 + (player.worldY - coin.worldY)**2; if (distSq < (player.radius + coin.radius)**2) { coin.active = false; hostileProjectiles.push({worldX: coin.worldX, worldY: coin.worldY, radius: 8, speed: 7, life: 300 }); } } }
+        for (const coin of redCoins) { 
+            if (coin.active) { 
+                const distSq = (player.worldX - coin.worldX)**2 + (player.worldY - coin.worldY)**2; 
+                if (distSq < (player.radius + coin.radius)**2) { 
+                    coin.active = false; 
+                    attackEvents.push({ count: 10, nextSpawnTime: time }); 
+                } 
+            } 
+        }
 
         if (portal && !gameCleared) { if (checkPlatformCollision(player, portal)) clearGame(); }
         player.rotationAngle += player.dx * 0.02;
         if (player.worldX > highestX) highestX = player.worldX;
-        if (player.worldY > viewHeight / 2 + height + 800) { if (!gameCleared) init(currentStage); }
+        if (player.worldY > viewHeight / 2 + height + 800) { if (!gameCleared) init(currentStage, false); }
     }
     
     function checkPlatformCollision(p, plat) { const cX = Math.max(plat.worldX, Math.min(p.worldX, plat.worldX + plat.width)); const cY = Math.max(plat.worldY, Math.min(p.worldY, plat.worldY + plat.height)); return ((p.worldX - cX)**2 + (p.worldY - cY)**2) < (p.radius**2); }
@@ -278,6 +288,7 @@ window.onload = function() {
         player.isBoosted = false; 
         player.boostEndTime = 0;
         player.standingOnPlatform = null;
+        player.isDead = false;
         jumpBufferTime = 0;
     }
     
@@ -327,7 +338,28 @@ window.onload = function() {
     function updateCoins() { [...iceCoins, ...rainbowCoins, ...redCoins].forEach(coin => { if (coin.active) { coin.worldX += coin.dx; coin.worldY += coin.dy; const screenLeft = camera.x + coin.radius; const screenRight = camera.x + viewWidth - coin.radius; const screenTop = camera.y + coin.radius; const screenBottom = camera.y + viewHeight - coin.radius; if (coin.worldX < screenLeft || coin.worldX > screenRight) { coin.dx *= -1; coin.worldX = Math.max(screenLeft, Math.min(coin.worldX, screenRight)); } if (coin.worldY < screenTop || coin.worldY > screenBottom) { coin.dy *= -1; coin.worldY = Math.max(screenTop, Math.min(coin.worldY, screenBottom)); } } }); }
     function drawCoins(time) { ctx.save(); iceCoins.forEach(coin => { if (coin.active) { const screenX = coin.worldX - camera.x; const screenY = coin.worldY - camera.y; ctx.fillStyle = 'black'; ctx.strokeStyle = 'white'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(screenX, screenY, coin.radius, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.fillStyle = 'rgba(255, 255, 255, 0.4)'; ctx.beginPath(); ctx.arc(screenX - coin.radius * 0.3, screenY - coin.radius * 0.3, coin.radius * 0.3, 0, Math.PI * 2); ctx.fill(); } }); rainbowCoins.forEach(coin => { if (coin.active) { const screenX = coin.worldX - camera.x; const screenY = coin.worldY - camera.y; const gradient = ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, coin.radius); const hue = (time / 10) % 360; gradient.addColorStop(0, `hsl(${hue}, 100%, 70%)`); gradient.addColorStop(0.5, `hsl(${(hue + 120) % 360}, 100%, 70%)`); gradient.addColorStop(1, `hsl(${(hue + 240) % 360}, 100%, 70%)`); ctx.fillStyle = gradient; ctx.beginPath(); ctx.arc(screenX, screenY, coin.radius, 0, Math.PI * 2); ctx.fill(); } }); redCoins.forEach(coin => { if (coin.active) { const screenX = coin.worldX - camera.x; const screenY = coin.worldY - camera.y; ctx.fillStyle = 'red'; ctx.strokeStyle = '#800000'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(screenX, screenY, coin.radius, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); } }); ctx.restore(); }
     
-    // ✨ 발사체 업데이트 로직
+    function updateAttackEvents(time) {
+        for (let i = attackEvents.length - 1; i >= 0; i--) {
+            const event = attackEvents[i];
+            if (event.count > 0 && time >= event.nextSpawnTime) {
+                event.count--;
+                event.nextSpawnTime = time + 1500;
+
+                hostileProjectiles.push({
+                    worldX: player.worldX,
+                    worldY: camera.y - 30,
+                    dx: 0,
+                    dy: 5,
+                    radius: 8,
+                    life: 400
+                });
+            }
+            if (event.count <= 0) {
+                attackEvents.splice(i, 1);
+            }
+        }
+    }
+
     function updateProjectiles() {
         for (let i = hostileProjectiles.length - 1; i >= 0; i--) {
             const p = hostileProjectiles[i];
@@ -338,37 +370,50 @@ window.onload = function() {
                 continue;
             }
 
-            // 플레이어를 향해 이동
+            p.dy += 0.2;
+
             const dirX = player.worldX - p.worldX;
             const dirY = player.worldY - p.worldY;
             const dist = Math.sqrt(dirX * dirX + dirY * dirY);
 
-            if (dist > 1) { // 거리가 1 이상일 때만 이동
-                p.worldX += (dirX / dist) * p.speed;
-                p.worldY += (dirY / dist) * p.speed;
+            if (dist > 1) {
+                p.dx += (dirX / dist) * 0.225; 
+                if (dirY > 0) {
+                     p.dy += (dirY / dist) * 0.1125;
+                }
+            }
+            
+            const speed = Math.sqrt(p.dx * p.dx + p.dy * p.dy);
+            if (speed > 15) {
+                p.dx = (p.dx / speed) * 15;
+                p.dy = (p.dy / speed) * 15;
             }
 
-            // 플레이어와 충돌 체크
+            p.worldX += p.dx;
+            p.worldY += p.dy;
+
             const distSqToPlayer = (player.worldX - p.worldX)**2 + (player.worldY - p.worldY)**2;
-            if (distSqToPlayer < (player.radius + p.radius)**2) {
-                if (!gameCleared) {
-                    // 플레이어 폭발 효과 (간단하게 파티클 생성)
-                    createExplosion(viewWidth / 2, viewHeight / 2, 0); 
-                    // 스테이지 재시작
-                    init(currentStage);
-                }
-                return; // 한 번에 하나의 충돌만 처리
+            if (!player.isDead && distSqToPlayer < (player.radius + p.radius)**2) {
+                player.isDead = true;
+                hostileProjectiles.splice(i, 1);
+                attackEvents = []; 
+                
+                createExplosion(viewWidth / 2, viewHeight / 2, 0); 
+                
+                setTimeout(() => {
+                    init(currentStage, false);
+                }, 500);
+                return;
             }
         }
     }
 
-    // ✨ 발사체 그리기 로직
     function drawProjectiles(time) {
         ctx.save();
         hostileProjectiles.forEach(p => {
             const screenX = p.worldX - camera.x;
             const screenY = p.worldY - camera.y;
-            const radius = p.radius + Math.sin(time / 50) * 2; // 크기 깜빡임 효과
+            const radius = p.radius + Math.sin(time / 50) * 2;
 
             const gradient = ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, radius);
             gradient.addColorStop(0, 'white');
@@ -384,6 +429,8 @@ window.onload = function() {
     }
     
     function drawPlayer(time) {
+        if (player.isDead) return;
+
         const screenX = viewWidth / 2, screenY = viewHeight / 2;
         ctx.save();
 
@@ -428,7 +475,7 @@ window.onload = function() {
         if (nextStage > savedHighestStage) {
             localStorage.setItem('highestStage', nextStage);
         }
-        setTimeout(() => { init(nextStage); }, STAGE_RESET_DELAY); 
+        setTimeout(() => { init(nextStage, true); }, STAGE_RESET_DELAY);
     }
 
     function launchFireworks() { const numRockets = 12; for (let i = 0; i < numRockets; i++) { setTimeout(() => { rockets.push({ x: Math.random() * width, y: height, dx: Math.random() * 6 - 3, dy: -(Math.random() * 8 + 15), targetY: Math.random() * (height / 2.5), hue: Math.random() * 360 }); }, i * 150); } }
@@ -476,7 +523,8 @@ window.onload = function() {
         if(!lastTime) lastTime = time;
         updatePlayer(time);
         updateCoins();
-        updateProjectiles(); // ✨ 발사체 업데이트
+        updateAttackEvents(time);
+        updateProjectiles();
         camera.x = player.worldX - (viewWidth / 2);
         camera.y = player.worldY - (viewHeight / 2);
 
@@ -486,7 +534,7 @@ window.onload = function() {
         renderWorld(time);
         drawPortal(time);
         drawCoins(time); 
-        drawProjectiles(time); // ✨ 발사체 그리기
+        drawProjectiles(time);
         drawPlayer(time);
 
         ctx.restore(); 
@@ -503,27 +551,35 @@ window.onload = function() {
     }
     
     function spawnManager() {
-        if (iceCoins.filter(c => c.active).length < MAX_ICE_COINS) {
-            if (Math.random() < 0.2) generateCoin('ice');
+        if (currentStage >= 1 && rainbowCoins.filter(c => c.active).length < MAX_RAINBOW_COINS) {
+            if (Math.random() < 0.05) {
+                generateCoin('rainbow');
+            }
         }
-        if (rainbowCoins.filter(c => c.active).length < MAX_RAINBOW_COINS) {
-            if (Math.random() < 0.02) generateCoin('rainbow');
+        if (currentStage >= 3 && iceCoins.filter(c => c.active).length < MAX_ICE_COINS) {
+            const chance = Math.min(0.5, 0.10 + (currentStage - 3) * 0.02);
+            if (Math.random() < chance) {
+                generateCoin('ice');
+            }
         }
-        // ✨ 빨간 코인 생성 로직
-        if (redCoins.filter(c => c.active).length < MAX_RED_COINS) {
-            if (Math.random() < 0.8) generateCoin('red');
+        if (currentStage >= 6 && redCoins.filter(c => c.active).length < MAX_RED_COINS) {
+            const chance = Math.min(0.6, 0.15 + (currentStage - 6) * 0.025);
+            if (Math.random() < chance) {
+                generateCoin('red');
+            }
         }
     }
 
     function generateCoin(type) {
         let dx, dy;
-        if (type === 'ice') {
-            dx = (Math.random() - 0.5) * 2; dy = (Math.random() - 0.5) * 1;
-        } else if (type === 'red') { // ✨ 빨간 코인 속도 설정
-            dx = (Math.random() - 0.5) * 4; dy = (Math.random() - 0.5) * 2;
-        } else { // rainbow
-            dx = (Math.random() - 0.5) * 1.5; dy = (Math.random() - 0.5) * 0.75;
-        }
+        const stageSpeedMultiplier = 1 + (currentStage - 1) * 0.15;
+        // ✨ 모든 코인 속도 통합 (빨강 기준 * 0.8) 및 2.5배 추가 증가
+        const baseSpeedX = 64 * 2.5; 
+        const baseSpeedY = 32 * 2.5; 
+
+        dx = (Math.random() - 0.5) * baseSpeedX * stageSpeedMultiplier;
+        dy = (Math.random() - 0.5) * baseSpeedY * stageSpeedMultiplier;
+        
         const newCoin = {
             worldX: camera.x + Math.random() * viewWidth,
             worldY: camera.y + Math.random() * viewHeight,
@@ -532,12 +588,12 @@ window.onload = function() {
 
         if (type === 'ice') iceCoins.push(newCoin);
         else if (type === 'rainbow') rainbowCoins.push(newCoin);
-        else if (type === 'red') redCoins.push(newCoin); // ✨ 빨간 코인 배열에 추가
+        else if (type === 'red') redCoins.push(newCoin);
     }
 
     function resetGame() {
         localStorage.removeItem('highestStage');
-        init(1, Date.now());
+        init(1, true);
     }
 
     function loadProgress() {
@@ -545,7 +601,7 @@ window.onload = function() {
         return parseInt(savedStage, 10) || 1;
     }
 
-    function init(stageLevel = 1, seed = null) {
+    function init(stageLevel = 1, isFullReset = false) {
         currentStage = stageLevel;
         width = canvas.width = window.innerWidth;
         height = canvas.height = window.innerHeight;
@@ -556,11 +612,16 @@ window.onload = function() {
         updateControlButtonsPosition();
         gameCleared = false; fireworksLaunched = false;
         rockets = []; particles = []; highestX = 0;
-        resetPlayer();
         
-        // ✨ 초기화 시 코인 및 발사체 목록 비우기
-        iceCoins = []; rainbowCoins = []; redCoins = [];
         hostileProjectiles = [];
+        attackEvents = [];
+
+        if (isFullReset) {
+            currentMapSeed = Date.now() + Math.random();
+            iceCoins = []; rainbowCoins = []; redCoins = [];
+        }
+
+        resetPlayer();
 
         if (!spawnCheckTimer) {
             spawnCheckTimer = setInterval(spawnManager, SPAWN_CHECK_INTERVAL);
@@ -578,8 +639,7 @@ window.onload = function() {
         player.initialX = 150; player.initialY = startPlatformY - 150;
         player.worldX = player.initialX; player.worldY = player.initialY;
         
-        const generationSeed = seed !== null ? seed : stageLevel;
-        const seededRandom = createSeededRandom(generationSeed);
+        const seededRandom = createSeededRandom(currentMapSeed);
 
         const s = stageLevel - 1;
         const platformCount = 10 + s * 5;
@@ -646,7 +706,7 @@ window.onload = function() {
     createPlayerTexture();
     createBackgroundPattern(); 
     
-    window.addEventListener('resize', () => init(currentStage));
-    init(loadProgress());
+    window.addEventListener('resize', () => init(currentStage, false));
+    init(loadProgress(), true);
     animate(0);
 };
