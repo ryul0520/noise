@@ -27,24 +27,29 @@ window.onload = function() {
     const SPAWN_CHECK_INTERVAL = 4000;
     const MAX_ICE_COINS = 2;
     const MAX_RAINBOW_COINS = 1;
-    // ✨ 무지개 발판 생성 확률 절반으로 감소
-    const RAINBOW_PLATFORM_CHANCE = 0.075;
+    const MAX_RED_COINS = 1; // ✨ 빨간 코인 최대 개수
+    const RAINBOW_PLATFORM_CHANCE = 0.0375;
 
     const player = {
         worldX: 200, worldY: 0, dx: 0, dy: 0, radius: 24, onGround: false,
         rotationAngle: 0, initialX: 200, initialY: 0,
         isFrozen: false, freezeEndTime: 0,
         isBoosted: false, boostEndTime: 0,
-        // ✨ timed-boost 상태는 제거하고, 현재 밟고 있는 발판을 저장할 변수 추가
         standingOnPlatform: null,
     };
+
+    let jumpBufferTime = 0;
+    const JUMP_BUFFER_DURATION = 150;
+
     const camera = { x: 0, y: 0 };
     
     let worldObjects = [], portal = null;
     let iceCoins = []; 
     let rainbowCoins = [];
+    let redCoins = []; // ✨ 빨간 코인 배열
+    let hostileProjectiles = []; // ✨ 공격 발사체 배열
     let spawnCheckTimer = null; 
-    let highestX = 0, sessionRecordX = 0, recordPlatform = null;
+    let highestX = 0; 
 
     let currentStage = 1; 
     let gameCleared = false; 
@@ -62,10 +67,8 @@ window.onload = function() {
     let portalBorderCanvas, portalNoiseMaskCanvas, portalCompositeCanvas;
 
     const keys = {};
-    window.addEventListener('keydown', (e) => { keys[e.code.toLowerCase()] = true; });
-    window.addEventListener('keyup', (e) => { keys[e.code.toLowerCase()] = false; });
     
-    let isTouchingLeft = false, isTouchingRight = false, isTryingToJump = false;
+    let isTouchingLeft = false, isTouchingRight = false;
     const jumpButton = { x: 0, y: 0, radius: 50 };
     const leftButton = { x: 0, y: 0, radius: 40 };
     const rightButton = { x: 0, y: 0, radius: 40 };
@@ -89,13 +92,12 @@ window.onload = function() {
         e.preventDefault(); 
         isTouchingLeft = false; 
         isTouchingRight = false; 
-        isTryingToJump = false;
 
         for (let i = 0; i < e.touches.length; i++) { 
             const touch = e.touches[i]; 
             const distJump = Math.sqrt((touch.clientX - jumpButton.x)**2 + (touch.clientY - jumpButton.y)**2); 
             if (distJump < jumpButton.radius) { 
-                isTryingToJump = true;
+                handleJumpInput();
                 continue; 
             } 
             const distLeft = Math.sqrt((touch.clientX - leftButton.x)**2 + (touch.clientY - leftButton.y)**2); 
@@ -115,10 +117,22 @@ window.onload = function() {
             }
         } 
     }
+    
+    window.addEventListener('keydown', (e) => {
+        const code = e.code.toLowerCase();
+        if (!keys[code] && (code === 'keyw' || code === 'arrowup' || code === 'space')) {
+            handleJumpInput();
+        }
+        keys[code] = true;
+    });
+    window.addEventListener('keyup', (e) => { keys[e.code.toLowerCase()] = false; });
 
     window.addEventListener('touchstart', handleTouches, { passive: false }); 
     window.addEventListener('touchmove', handleTouches, { passive: false }); 
-    window.addEventListener('touchend', (e) => { handleTouches(e); }, { passive: false });
+    window.addEventListener('touchend', (e) => { 
+        isTouchingLeft = false;
+        isTouchingRight = false;
+    }, { passive: false });
 
     window.addEventListener('click', (e) => {
         const distReset = Math.sqrt((e.clientX - resetButton.x)**2 + (e.clientY - resetButton.y)**2);
@@ -129,6 +143,17 @@ window.onload = function() {
 
     function getStaticNoiseValue(x, y) { let seed = Math.floor(x) * 1357 + Math.floor(y) * 2468; let t = seed += 1831565813; t = Math.imul(t ^ t >>> 15, 1 | t); t ^= t + Math.imul(t ^ t >>> 7, 61 | t); return ((t ^ t >>> 14) >>> 0) % 2 === 0 ? 0 : 255; }
     
+    function createSeededRandom(seed) {
+        return function() {
+            seed = Math.imul(1664525, seed) + 1013904223;
+            let t = seed;
+            t = Math.imul(t ^ t >>> 15, 1 | t);
+            t ^= t + Math.imul(t ^ t >>> 7, 61 | t);
+            t = (t ^ t >>> 14) >>> 0;
+            return t / 4294967296;
+        }
+    }
+
     function createPlayerTexture() { 
         const iD = pTextureCtx.createImageData(PLAYER_TEXTURE_SIZE, PLAYER_TEXTURE_SIZE);
         const d = iD.data;
@@ -153,20 +178,24 @@ window.onload = function() {
         bgPattern = ctx.createPattern(bgCanvas, 'repeat');
     }
 
+    function handleJumpInput() {
+        jumpBufferTime = Date.now();
+    }
+
     function updatePlayer(time) {
         if (gameCleared) return;
         
-        // ✨ 매 프레임 능력치를 기본값으로 초기화
         JUMP_FORCE = BASE_JUMP_FORCE;
         PLAYER_ACCEL = BASE_PLAYER_ACCEL;
         MAX_SPEED = BASE_MAX_SPEED;
+
+        const jumpBufferValid = Date.now() - jumpBufferTime < JUMP_BUFFER_DURATION;
 
         if (player.isFrozen) { 
             if (time > player.freezeEndTime) player.isFrozen = false; 
             return; 
         }
 
-        // 레인보우 코인으로 인한 부스트 (timed)
         if (player.isBoosted) {
             if (time > player.boostEndTime) {
                 player.isBoosted = false;
@@ -176,7 +205,6 @@ window.onload = function() {
             }
         }
         
-        // ✨ 무지개 발판 위에서만 적용되는 부스트 (instant)
         if (player.onGround && player.standingOnPlatform && player.standingOnPlatform.type === 'rainbow') {
             JUMP_FORCE = BASE_JUMP_FORCE * 1.8;
             PLAYER_ACCEL = BASE_PLAYER_ACCEL * 1.5;
@@ -185,10 +213,11 @@ window.onload = function() {
 
         if (keys['keya'] || keys['arrowleft'] || isTouchingLeft) player.dx -= PLAYER_ACCEL;
         if (keys['keyd'] || keys['arrowright'] || isTouchingRight) player.dx += PLAYER_ACCEL;
-
-        if ((keys['keyw'] || keys['arrowup'] || keys['space'] || isTryingToJump) && player.onGround) { 
-            player.dy = JUMP_FORCE; 
-            player.onGround = false; 
+        
+        if (jumpBufferValid && player.onGround) {
+            player.dy = JUMP_FORCE;
+            player.onGround = false;
+            jumpBufferTime = 0;
         }
 
         player.dx *= FRICTION;
@@ -199,6 +228,7 @@ window.onload = function() {
         const physicalObjects = worldObjects.filter(o => o.isPhysical);
         const lastPlayerY = player.worldY;
         player.worldX += player.dx;
+        
         for (const p of physicalObjects) { 
             if (checkPlatformCollision(player, p)) { 
                 if (player.dx > 0) player.worldX = p.worldX - player.radius; 
@@ -208,14 +238,15 @@ window.onload = function() {
         }
         player.worldY += player.dy;
         player.onGround = false;
-        player.standingOnPlatform = null; // ✨ 매 프레임 초기화
+        player.standingOnPlatform = null;
+
         for (const p of physicalObjects) { 
             if (checkPlatformCollision(player, p)) { 
                 if (player.dy >= 0 && lastPlayerY + player.radius <= p.worldY + 1) { 
                     player.worldY = p.worldY - player.radius; 
                     player.dy = 0; 
                     player.onGround = true; 
-                    player.standingOnPlatform = p; // ✨ 밟고 있는 발판 정보 저장
+                    player.standingOnPlatform = p;
                 } else if (player.dy < 0) { 
                     player.worldY = p.worldY + p.height + player.radius; 
                     player.dy = 0; 
@@ -225,6 +256,8 @@ window.onload = function() {
         
         for (const coin of iceCoins) { if (coin.active) { const distSq = (player.worldX - coin.worldX)**2 + (player.worldY - coin.worldY)**2; if (distSq < (player.radius + coin.radius)**2) { coin.active = false; player.isFrozen = true; player.freezeEndTime = time + 3000; player.dx = 0; player.dy = 0; } } }
         for (const coin of rainbowCoins) { if (coin.active) { const distSq = (player.worldX - coin.worldX)**2 + (player.worldY - coin.worldY)**2; if (distSq < (player.radius + coin.radius)**2) { coin.active = false; player.isBoosted = true; player.boostEndTime = time + 5000; } } }
+        // ✨ 빨간 코인 충돌 처리
+        for (const coin of redCoins) { if (coin.active) { const distSq = (player.worldX - coin.worldX)**2 + (player.worldY - coin.worldY)**2; if (distSq < (player.radius + coin.radius)**2) { coin.active = false; hostileProjectiles.push({worldX: coin.worldX, worldY: coin.worldY, radius: 8, speed: 7, life: 300 }); } } }
 
         if (portal && !gameCleared) { if (checkPlatformCollision(player, portal)) clearGame(); }
         player.rotationAngle += player.dx * 0.02;
@@ -235,9 +268,7 @@ window.onload = function() {
     function checkPlatformCollision(p, plat) { const cX = Math.max(plat.worldX, Math.min(p.worldX, plat.worldX + plat.width)); const cY = Math.max(plat.worldY, Math.min(p.worldY, plat.worldY + plat.height)); return ((p.worldX - cX)**2 + (p.worldY - cY)**2) < (p.radius**2); }
     
     function resetPlayer() { 
-        if (highestX > sessionRecordX) sessionRecordX = highestX; 
         highestX = 0; 
-        updateRecordPlatform(); 
         player.worldX = player.initialX; 
         player.worldY = player.initialY; 
         player.dx = 0; 
@@ -246,8 +277,8 @@ window.onload = function() {
         player.freezeEndTime = 0; 
         player.isBoosted = false; 
         player.boostEndTime = 0;
-        player.standingOnPlatform = null; // ✨ 초기화
-        // 기본 값 복원은 updatePlayer 시작 시 매번 하므로 여기서 제거
+        player.standingOnPlatform = null;
+        jumpBufferTime = 0;
     }
     
     function renderWorld(time) {
@@ -266,11 +297,16 @@ window.onload = function() {
             if (screenX + obj.width < 0 || screenX > scaledViewWidth || screenY + obj.height < 0 || screenY > scaledViewHeight) return;
             
             if (obj.type === 'rainbow') {
-                const gradient = ctx.createLinearGradient(screenX, 0, screenX + obj.width, 0);
-                const hue = (time / 10) % 360;
-                for (let i = 0; i <= 10; i++) {
-                    gradient.addColorStop(i / 10, `hsl(${(hue + i * 36) % 360}, 100%, 70%)`);
-                }
+                const gradient = ctx.createRadialGradient(
+                    screenX + obj.width / 2, screenY + obj.height / 2, 0, 
+                    screenX + obj.width / 2, screenY + obj.height / 2, obj.width * 0.8
+                );
+                
+                const hue = (time / 20) % 360;
+                gradient.addColorStop(0, `hsla(${hue}, 85%, 75%, 0.8)`);
+                gradient.addColorStop(0.5, `hsla(${(hue + 120) % 360}, 85%, 75%, 0.5)`);
+                gradient.addColorStop(1, `hsla(${(hue + 240) % 360}, 85%, 75%, 0.2)`);
+                
                 ctx.fillStyle = gradient;
                 ctx.fillRect(screenX, screenY, obj.width, obj.height);
             } else {
@@ -288,14 +324,69 @@ window.onload = function() {
 
     function createPortalAssets() { const outerWidth = portal.width + PORTAL_BORDER_SIZE * 2; const outerHeight = portal.height + PORTAL_BORDER_SIZE * 2; portalBorderCanvas = document.createElement('canvas'); portalBorderCanvas.width = outerWidth; portalBorderCanvas.height = outerHeight; const borderCtx = portalBorderCanvas.getContext('2d'); for(let y=0; y<outerHeight; y++) for(let x=0; x<outerWidth; x++) if (x<PORTAL_BORDER_SIZE || x>=outerWidth-PORTAL_BORDER_SIZE || y<PORTAL_BORDER_SIZE || y>=outerHeight-PORTAL_BORDER_SIZE) if(getStaticNoiseValue(x,y)>128) { const lightness=15+Math.random()*15; borderCtx.fillStyle=`hsl(0, 75%, ${lightness}%)`; borderCtx.fillRect(x,y,1,1); } portalNoiseMaskCanvas = document.createElement('canvas'); portalNoiseMaskCanvas.width = portal.width; portalNoiseMaskCanvas.height = portal.height; const maskCtx = portalNoiseMaskCanvas.getContext('2d'); for (let y=0; y<portal.height; y++) for (let x=0; x<portal.width; x++) if(getStaticNoiseValue(x,y)>128) { maskCtx.fillStyle='black'; maskCtx.fillRect(x,y,1,1); } portalCompositeCanvas = document.createElement('canvas'); portalCompositeCanvas.width = outerWidth; portalCompositeCanvas.height = outerHeight; }
     function drawPortal(time) { if (!portal || !portalCompositeCanvas) return; const pCtx = portalCompositeCanvas.getContext('2d'); const outerWidth = portalCompositeCanvas.width; const outerHeight = portalCompositeCanvas.height; pCtx.clearRect(0, 0, outerWidth, outerHeight); const gradient = pCtx.createLinearGradient(0, PORTAL_BORDER_SIZE, 0, PORTAL_BORDER_SIZE + portal.height); const hue = (time / 20) % 360; gradient.addColorStop(0, `hsla(${hue}, 80%, 40%, 0.8)`); gradient.addColorStop(1, `hsla(${(hue + 40) % 360}, 80%, 40%, 0.8)`); pCtx.fillStyle = gradient; pCtx.fillRect(PORTAL_BORDER_SIZE, PORTAL_BORDER_SIZE, portal.width, portal.height); pCtx.globalCompositeOperation = 'destination-in'; pCtx.drawImage(portalNoiseMaskCanvas, PORTAL_BORDER_SIZE, PORTAL_BORDER_SIZE); pCtx.globalCompositeOperation = 'source-over'; pCtx.drawImage(portalBorderCanvas, 0, 0); const screenX = Math.floor(portal.worldX - camera.x); const screenY = Math.floor(portal.worldY - camera.y); ctx.drawImage(portalCompositeCanvas, screenX - PORTAL_BORDER_SIZE, screenY - PORTAL_BORDER_SIZE); }
-    function updateCoins() { [...iceCoins, ...rainbowCoins].forEach(coin => { if (coin.active) { coin.worldX += coin.dx; coin.worldY += coin.dy; const screenLeft = camera.x + coin.radius; const screenRight = camera.x + viewWidth - coin.radius; const screenTop = camera.y + coin.radius; const screenBottom = camera.y + viewHeight - coin.radius; if (coin.worldX < screenLeft || coin.worldX > screenRight) { coin.dx *= -1; coin.worldX = Math.max(screenLeft, Math.min(coin.worldX, screenRight)); } if (coin.worldY < screenTop || coin.worldY > screenBottom) { coin.dy *= -1; coin.worldY = Math.max(screenTop, Math.min(coin.worldY, screenBottom)); } } }); }
-    function drawCoins(time) { ctx.save(); iceCoins.forEach(coin => { if (coin.active) { const screenX = coin.worldX - camera.x; const screenY = coin.worldY - camera.y; ctx.fillStyle = 'black'; ctx.strokeStyle = 'white'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(screenX, screenY, coin.radius, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.fillStyle = 'rgba(255, 255, 255, 0.4)'; ctx.beginPath(); ctx.arc(screenX - coin.radius * 0.3, screenY - coin.radius * 0.3, coin.radius * 0.3, 0, Math.PI * 2); ctx.fill(); } }); rainbowCoins.forEach(coin => { if (coin.active) { const screenX = coin.worldX - camera.x; const screenY = coin.worldY - camera.y; const gradient = ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, coin.radius); const hue = (time / 10) % 360; gradient.addColorStop(0, `hsl(${hue}, 100%, 70%)`); gradient.addColorStop(0.5, `hsl(${(hue + 120) % 360}, 100%, 70%)`); gradient.addColorStop(1, `hsl(${(hue + 240) % 360}, 100%, 70%)`); ctx.fillStyle = gradient; ctx.beginPath(); ctx.arc(screenX, screenY, coin.radius, 0, Math.PI * 2); ctx.fill(); } }); ctx.restore(); }
+    function updateCoins() { [...iceCoins, ...rainbowCoins, ...redCoins].forEach(coin => { if (coin.active) { coin.worldX += coin.dx; coin.worldY += coin.dy; const screenLeft = camera.x + coin.radius; const screenRight = camera.x + viewWidth - coin.radius; const screenTop = camera.y + coin.radius; const screenBottom = camera.y + viewHeight - coin.radius; if (coin.worldX < screenLeft || coin.worldX > screenRight) { coin.dx *= -1; coin.worldX = Math.max(screenLeft, Math.min(coin.worldX, screenRight)); } if (coin.worldY < screenTop || coin.worldY > screenBottom) { coin.dy *= -1; coin.worldY = Math.max(screenTop, Math.min(coin.worldY, screenBottom)); } } }); }
+    function drawCoins(time) { ctx.save(); iceCoins.forEach(coin => { if (coin.active) { const screenX = coin.worldX - camera.x; const screenY = coin.worldY - camera.y; ctx.fillStyle = 'black'; ctx.strokeStyle = 'white'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(screenX, screenY, coin.radius, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.fillStyle = 'rgba(255, 255, 255, 0.4)'; ctx.beginPath(); ctx.arc(screenX - coin.radius * 0.3, screenY - coin.radius * 0.3, coin.radius * 0.3, 0, Math.PI * 2); ctx.fill(); } }); rainbowCoins.forEach(coin => { if (coin.active) { const screenX = coin.worldX - camera.x; const screenY = coin.worldY - camera.y; const gradient = ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, coin.radius); const hue = (time / 10) % 360; gradient.addColorStop(0, `hsl(${hue}, 100%, 70%)`); gradient.addColorStop(0.5, `hsl(${(hue + 120) % 360}, 100%, 70%)`); gradient.addColorStop(1, `hsl(${(hue + 240) % 360}, 100%, 70%)`); ctx.fillStyle = gradient; ctx.beginPath(); ctx.arc(screenX, screenY, coin.radius, 0, Math.PI * 2); ctx.fill(); } }); redCoins.forEach(coin => { if (coin.active) { const screenX = coin.worldX - camera.x; const screenY = coin.worldY - camera.y; ctx.fillStyle = 'red'; ctx.strokeStyle = '#800000'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(screenX, screenY, coin.radius, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); } }); ctx.restore(); }
+    
+    // ✨ 발사체 업데이트 로직
+    function updateProjectiles() {
+        for (let i = hostileProjectiles.length - 1; i >= 0; i--) {
+            const p = hostileProjectiles[i];
+            
+            p.life--;
+            if (p.life <= 0) {
+                hostileProjectiles.splice(i, 1);
+                continue;
+            }
+
+            // 플레이어를 향해 이동
+            const dirX = player.worldX - p.worldX;
+            const dirY = player.worldY - p.worldY;
+            const dist = Math.sqrt(dirX * dirX + dirY * dirY);
+
+            if (dist > 1) { // 거리가 1 이상일 때만 이동
+                p.worldX += (dirX / dist) * p.speed;
+                p.worldY += (dirY / dist) * p.speed;
+            }
+
+            // 플레이어와 충돌 체크
+            const distSqToPlayer = (player.worldX - p.worldX)**2 + (player.worldY - p.worldY)**2;
+            if (distSqToPlayer < (player.radius + p.radius)**2) {
+                if (!gameCleared) {
+                    // 플레이어 폭발 효과 (간단하게 파티클 생성)
+                    createExplosion(viewWidth / 2, viewHeight / 2, 0); 
+                    // 스테이지 재시작
+                    init(currentStage);
+                }
+                return; // 한 번에 하나의 충돌만 처리
+            }
+        }
+    }
+
+    // ✨ 발사체 그리기 로직
+    function drawProjectiles(time) {
+        ctx.save();
+        hostileProjectiles.forEach(p => {
+            const screenX = p.worldX - camera.x;
+            const screenY = p.worldY - camera.y;
+            const radius = p.radius + Math.sin(time / 50) * 2; // 크기 깜빡임 효과
+
+            const gradient = ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, radius);
+            gradient.addColorStop(0, 'white');
+            gradient.addColorStop(0.4, 'yellow');
+            gradient.addColorStop(1, 'rgba(255, 0, 0, 0.7)');
+
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, radius, 0, Math.PI * 2);
+            ctx.fill();
+        });
+        ctx.restore();
+    }
     
     function drawPlayer(time) {
         const screenX = viewWidth / 2, screenY = viewHeight / 2;
         ctx.save();
 
-        // ✨ 무지개 발판 위에 있을 때 오라 효과
         if (player.onGround && player.standingOnPlatform && player.standingOnPlatform.type === 'rainbow') {
             const auraRadius = player.radius + 12 + Math.sin(time / 80) * 5;
             const gradient = ctx.createRadialGradient(screenX, screenY, player.radius, screenX, screenY, auraRadius);
@@ -307,7 +398,7 @@ window.onload = function() {
             ctx.beginPath();
             ctx.arc(screenX, screenY, auraRadius, 0, 2 * Math.PI);
             ctx.fill();
-        } else if (player.isBoosted) { // 코인 부스트 오라
+        } else if (player.isBoosted) {
             const auraRadius = player.radius + 8 + Math.sin(time / 100) * 3;
             const gradient = ctx.createRadialGradient(screenX, screenY, player.radius, screenX, screenY, auraRadius);
             const hue = (time / 15) % 360;
@@ -379,14 +470,13 @@ window.onload = function() {
     }
 
     function drawControlButtons() { const bS = 'rgba(255, 255, 255, 0.35)'; const brS = 'rgba(255, 255, 255, 0.7)'; const iS = 'rgba(255, 255, 255, 0.9)'; ctx.lineWidth = 2; ctx.fillStyle = bS; ctx.strokeStyle = brS; ctx.beginPath(); ctx.arc(jumpButton.x, jumpButton.y, jumpButton.radius, 0, 2*Math.PI); ctx.fill(); ctx.stroke(); ctx.fillStyle = iS; ctx.beginPath(); ctx.moveTo(jumpButton.x, jumpButton.y-jumpButton.radius*0.4); ctx.lineTo(jumpButton.x-jumpButton.radius*0.5, jumpButton.y+jumpButton.radius*0.3); ctx.lineTo(jumpButton.x+jumpButton.radius*0.5, jumpButton.y+jumpButton.radius*0.3); ctx.closePath(); ctx.fill(); ctx.fillStyle = bS; ctx.strokeStyle = brS; ctx.beginPath(); ctx.arc(leftButton.x, leftButton.y, leftButton.radius, 0, 2*Math.PI); ctx.fill(); ctx.stroke(); ctx.fillStyle = iS; ctx.beginPath(); ctx.moveTo(leftButton.x-leftButton.radius*0.4, leftButton.y); ctx.lineTo(leftButton.x+leftButton.radius*0.4, leftButton.y-leftButton.radius*0.5); ctx.lineTo(leftButton.x+leftButton.radius*0.4, leftButton.y+leftButton.radius*0.5); ctx.closePath(); ctx.fill(); ctx.fillStyle = bS; ctx.strokeStyle = brS; ctx.beginPath(); ctx.arc(rightButton.x, rightButton.y, rightButton.radius, 0, 2*Math.PI); ctx.fill(); ctx.stroke(); ctx.fillStyle = iS; ctx.beginPath(); ctx.moveTo(rightButton.x+rightButton.radius*0.4, rightButton.y); ctx.lineTo(rightButton.x-rightButton.radius*0.4, rightButton.y-rightButton.radius*0.5); ctx.lineTo(rightButton.x-rightButton.radius*0.4, rightButton.y+rightButton.radius*0.5); ctx.closePath(); ctx.fill(); }
-    function drawRecordFlag() { if (!recordPlatform) return; const fW = 40, fH = 25, pH = 50, pWd = 2; const pCX = recordPlatform.worldX + recordPlatform.width / 2; const pTY = recordPlatform.worldY; const sPX = Math.floor((pCX - camera.x) / CAMERA_ZOOM); const sPTY = Math.floor((pTY - pH - camera.y) / CAMERA_ZOOM); if (sPX + fW < 0 || sPX - pWd > width) return; const pID = ctx.createImageData(pWd, pH); const pD = pID.data; for (let y = 0; y < pH; y++) for (let x = 0; x < pWd; x++) { const s=getStaticNoiseValue(x, y+100); const i=(y*pWd+x)*4; pD[i]=s; pD[i+1]=s; pD[i+2]=s; pD[i+3]=255; } ctx.putImageData(pID, sPX - Math.floor(pWd/2), sPTY); const fID = ctx.createImageData(fW, fH); const fD = fID.data; for (let y = 0; y < fH; y++) for (let x = 0; x < fW; x++) { const s=getStaticNoiseValue(x, y); const i=(y*fW+x)*4; fD[i]=s; fD[i+1]=s; fD[i+2]=s; fD[i+3]=255; } ctx.putImageData(fID, sPX, sPTY); }
-    function updateRecordPlatform() { const phys = worldObjects.filter(o => o.isPhysical); let best = null; for (const p of phys) { if (p.worldX <= sessionRecordX) best = p; else break; } recordPlatform = best; }
-
+    
     let lastTime = 0;
     function animate(time) {
         if(!lastTime) lastTime = time;
         updatePlayer(time);
         updateCoins();
+        updateProjectiles(); // ✨ 발사체 업데이트
         camera.x = player.worldX - (viewWidth / 2);
         camera.y = player.worldY - (viewHeight / 2);
 
@@ -396,12 +486,12 @@ window.onload = function() {
         renderWorld(time);
         drawPortal(time);
         drawCoins(time); 
+        drawProjectiles(time); // ✨ 발사체 그리기
         drawPlayer(time);
 
         ctx.restore(); 
 
         if (!gameCleared) {
-            drawRecordFlag();
             drawControlButtons();
             drawStageUI();
             drawResetButton();
@@ -419,27 +509,35 @@ window.onload = function() {
         if (rainbowCoins.filter(c => c.active).length < MAX_RAINBOW_COINS) {
             if (Math.random() < 0.02) generateCoin('rainbow');
         }
+        // ✨ 빨간 코인 생성 로직
+        if (redCoins.filter(c => c.active).length < MAX_RED_COINS) {
+            if (Math.random() < 0.8) generateCoin('red');
+        }
     }
 
     function generateCoin(type) {
         let dx, dy;
         if (type === 'ice') {
-            dx = (Math.random() - 0.5) * 60; dy = (Math.random() - 0.5) * 30;
-        } else { 
-            dx = (Math.random() - 0.5) * 12; dy = (Math.random() - 0.5) * 6;
+            dx = (Math.random() - 0.5) * 2; dy = (Math.random() - 0.5) * 1;
+        } else if (type === 'red') { // ✨ 빨간 코인 속도 설정
+            dx = (Math.random() - 0.5) * 4; dy = (Math.random() - 0.5) * 2;
+        } else { // rainbow
+            dx = (Math.random() - 0.5) * 1.5; dy = (Math.random() - 0.5) * 0.75;
         }
         const newCoin = {
             worldX: camera.x + Math.random() * viewWidth,
             worldY: camera.y + Math.random() * viewHeight,
             radius: 15, active: true, dx: dx, dy: dy,
         };
+
         if (type === 'ice') iceCoins.push(newCoin);
         else if (type === 'rainbow') rainbowCoins.push(newCoin);
+        else if (type === 'red') redCoins.push(newCoin); // ✨ 빨간 코인 배열에 추가
     }
 
     function resetGame() {
         localStorage.removeItem('highestStage');
-        init(1);
+        init(1, Date.now());
     }
 
     function loadProgress() {
@@ -447,7 +545,7 @@ window.onload = function() {
         return parseInt(savedStage, 10) || 1;
     }
 
-    function init(stageLevel = 1) {
+    function init(stageLevel = 1, seed = null) {
         currentStage = stageLevel;
         width = canvas.width = window.innerWidth;
         height = canvas.height = window.innerHeight;
@@ -458,11 +556,13 @@ window.onload = function() {
         updateControlButtonsPosition();
         gameCleared = false; fireworksLaunched = false;
         rockets = []; particles = []; highestX = 0;
-        recordPlatform = null; sessionRecordX = 0;
         resetPlayer();
+        
+        // ✨ 초기화 시 코인 및 발사체 목록 비우기
+        iceCoins = []; rainbowCoins = []; redCoins = [];
+        hostileProjectiles = [];
 
         if (!spawnCheckTimer) {
-            iceCoins = []; rainbowCoins = [];
             spawnCheckTimer = setInterval(spawnManager, SPAWN_CHECK_INTERVAL);
         }
 
@@ -472,11 +572,14 @@ window.onload = function() {
         let currentX = -200; let prevY = startPlatformY;
         const startPlatformSegmentWidth = 100; const startPlatformSegmentHeight = startPlatformSegmentWidth / 1.7;
         for (let i = 0; i < 10; i++) {
-            platforms.push({ worldX: currentX, worldY: prevY, width: startPlatformSegmentWidth, height: startPlatformSegmentHeight, isPhysical: true });
+            platforms.push({ worldX: currentX, worldY: prevY, width: startPlatformSegmentWidth, height: startPlatformSegmentHeight, isPhysical: true, initialY: prevY });
             currentX += startPlatformSegmentWidth;
         }
         player.initialX = 150; player.initialY = startPlatformY - 150;
         player.worldX = player.initialX; player.worldY = player.initialY;
+        
+        const generationSeed = seed !== null ? seed : stageLevel;
+        const seededRandom = createSeededRandom(generationSeed);
 
         const s = stageLevel - 1;
         const platformCount = 10 + s * 5;
@@ -487,30 +590,45 @@ window.onload = function() {
         const platformMinWidth = Math.max(40, 100 - s * 10);
 
         let previousPlatformWasRainbow = false;
+        let makeNextPlatformWider = false;
 
         for (let i = 0; i < platformCount; i++) {
             let MIN_X_GAP = MIN_X_GAP_BASE;
             let MAX_X_GAP = MAX_X_GAP_BASE;
 
-            // ✨ 이전 발판이 무지개였으면 다음 간격을 훨씬 더 멀게 설정
             if (previousPlatformWasRainbow) {
-                MIN_X_GAP *= 2.2;
-                MAX_X_GAP *= 2.5;
+                MIN_X_GAP *= 1.6;
+                MAX_X_GAP *= 1.8;
                 previousPlatformWasRainbow = false;
             }
 
-            const xGap = MIN_X_GAP + Math.random() * (MAX_X_GAP - MIN_X_GAP);
-            const yChange = (Math.random() - 0.45) * 2 * MAX_Y_CHANGE;
-            let pW = platformMinWidth + Math.random() * (platformMaxWidth - platformMinWidth);
+            const xGap = MIN_X_GAP + seededRandom() * (MAX_X_GAP - MIN_X_GAP);
+            const yChange = (seededRandom() - 0.45) * 2 * MAX_Y_CHANGE;
+            
+            let pW = platformMinWidth + seededRandom() * (platformMaxWidth - platformMinWidth);
+            
+            if (makeNextPlatformWider) {
+                pW = Math.min(pW * 1.5, platformMaxWidth * 1.2);
+                makeNextPlatformWider = false;
+            }
+
             let pH = pW / 1.7;
             currentX += xGap; let newY = prevY + yChange;
             if (newY > viewHeight - pH - 20) newY = viewHeight - pH - 20; if (newY < 150) newY = 150;
             
-            const newPlatform = { worldX: currentX, worldY: newY, width: pW, height: pH, isPhysical: true };
+            const newPlatform = { 
+                worldX: currentX, 
+                worldY: newY, 
+                width: pW, 
+                height: pH, 
+                isPhysical: true,
+                initialY: newY,
+            };
             
-            if (i > 0 && Math.random() < RAINBOW_PLATFORM_CHANCE) {
+            if (i > 0 && !previousPlatformWasRainbow && seededRandom() < RAINBOW_PLATFORM_CHANCE) {
                 newPlatform.type = 'rainbow';
                 previousPlatformWasRainbow = true;
+                makeNextPlatformWider = true;
             }
 
             platforms.push(newPlatform);
