@@ -28,7 +28,7 @@ window.onload = function() {
     const MAX_ICE_COINS = 3;
     const MAX_RAINBOW_COINS = 1;
     const MAX_RED_COINS = 2;
-    const MAX_GAMBLE_COINS = 1;
+    const MAX_GAMBLE_COINS = 2;
     const RAINBOW_PLATFORM_CHANCE = 0.0375;
 
     const player = {
@@ -286,20 +286,18 @@ window.onload = function() {
                 const distSq = (player.worldX - coin.worldX)**2 + (player.worldY - coin.worldY)**2;
                 if (distSq < (player.radius + coin.radius)**2) {
                     coin.active = false;
-                    const effect = Math.floor(Math.random() * 3);
-                    switch (effect) {
-                        case 0: // 부스트 효과
-                            player.isBoosted = true;
-                            player.boostEndTime = time + 5000;
-                            break;
-                        case 1: // 컨트롤 반전 효과
-                            player.controlsInverted = true;
-                            player.invertEndTime = time + 5000;
-                            break;
-                        case 2: // 위협 제거 효과
-                            hostileProjectiles = [];
-                            createExplosion(player.worldX - camera.x + viewWidth / 2, player.worldY - camera.y + viewHeight/2, 60);
-                            break;
+                    const effectRoll = Math.random();
+                    if (effectRoll < 0.75) { // 75%
+                        // 컨트롤 반전 효과
+                        player.controlsInverted = true;
+                        player.invertEndTime = time + 5000;
+                    } else { // 25%
+                        // 모든 코인 제거 효과
+                        iceCoins.forEach(c => c.active = false);
+                        rainbowCoins.forEach(c => c.active = false);
+                        redCoins.forEach(c => c.active = false);
+                        gambleCoins.forEach(c => c.active = false);
+                        createExplosion(player.worldX - camera.x + viewWidth / 2, player.worldY - camera.y + viewHeight/2, 60);
                     }
                 }
             }
@@ -863,7 +861,7 @@ window.onload = function() {
                 generateCoin('red');
             }
         }
-        if (currentStage >= 8 && gambleCoins.filter(c => c.active).length < MAX_GAMBLE_COINS) {
+        if (currentStage >= 5 && gambleCoins.filter(c => c.active).length < MAX_GAMBLE_COINS) {
             const chance = Math.min(0.5, 0.10 + (currentStage - 3) * 0.02);
             if (Math.random() < chance) {
                 generateCoin('gamble');
@@ -931,11 +929,11 @@ window.onload = function() {
         const seededRandom = createSeededRandom(currentMapSeed);
         const s = stageLevel - 1;
         const platformCount = 10 + s * 5;
-        const MIN_X_GAP_BASE = 110 + s * 15;
-        const MAX_X_GAP_BASE = 160 + s * 20;
-        const MAX_Y_CHANGE = 40 + s * 15;
-        const platformMaxWidth = Math.max(60, 200 - s * 15);
-        const platformMinWidth = Math.max(40, 100 - s * 10);
+        const MIN_X_GAP_BASE = 110 + s * 10;
+        const MAX_X_GAP_BASE = 160 + s * 15;
+        const MAX_Y_CHANGE = 40 + s * 10;
+        const platformMaxWidth = Math.max(80, 200 - s * 10);
+        const platformMinWidth = Math.max(60, 100 - s * 5);
         let previousPlatformWasRainbow = false;
         let makeNextPlatformWider = false;
         for (let i = 0; i < platformCount; i++) {
