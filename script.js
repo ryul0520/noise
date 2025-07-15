@@ -204,11 +204,11 @@ window.onload = function() {
     function updatePlayer(time) {
         if (gameCleared || player.isDead) return;
         
-        // --- 변경: 무적 해제 조건을 시간과 위치 모두 고려 ---
         if (player.isInvincible && (time > player.invincibleEndTime || player.worldX > stageStartX)) {
             player.isInvincible = false;
         }
         
+        // --- 변경: 사망 후 기록된 진행도가 있고, 플레이어가 출발선을 넘으면 기록된 진행도를 0으로 초기화 ---
         if (lastProgress > 0 && player.worldX > stageStartX) {
             lastProgress = 0;
         }
@@ -811,10 +811,13 @@ window.onload = function() {
         let progressPercent = 0;
         let textColor = 'rgba(255, 255, 255, 0.9)';
 
-        if (player.isDead) {
+        // --- 변경: lastProgress 값을 기준으로 진행도 표시 로직 수정 ---
+        if (lastProgress > 0) {
+            // 사망 후 리스타트했다면, 마지막 진행도를 빨간색으로 표시
             progressPercent = lastProgress;
             textColor = 'rgba(255, 100, 100, 0.9)';
         } else {
+            // 정상 플레이 중이거나, 출발선을 넘어섰다면 현재 진행도를 계산하여 표시
             const currentProgress = player.worldX - stageStartX;
             progressPercent = stageLength > 0 ? Math.min(100, Math.max(0, (currentProgress / stageLength) * 100)) : 0;
         }
