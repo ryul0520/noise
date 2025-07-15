@@ -29,6 +29,8 @@ window.onload = function() {
     const COIN_TYPES = ['ice', 'rainbow', 'red', 'invert'];
     
     const MIN_COIN_SPEED = 6;
+    const SHIELD_RADIUS_OFFSET = 6;
+    const SHIELD_REPEL_FORCE = 15;
     
     const player = {
         worldX: 200, worldY: 0, dx: 0, dy: 0, radius: 24, onGround: false,
@@ -59,7 +61,7 @@ window.onload = function() {
     let currentMapSeed = 0;
     let portalTargetX = 0;
     let stageStartX = 0;
-    let lastProgress = 0; // --- 추가: 사망 시 최종 진행률 저장 ---
+    let lastProgress = 0;
 
     let currentStage = 1; 
     let gameCleared = false; 
@@ -202,11 +204,11 @@ window.onload = function() {
     function updatePlayer(time) {
         if (gameCleared || player.isDead) return;
         
-        if (player.isInvincible && time > player.invincibleEndTime) {
+        // --- 변경: 무적 해제 조건을 시간과 위치 모두 고려 ---
+        if (player.isInvincible && (time > player.invincibleEndTime || player.worldX > stageStartX)) {
             player.isInvincible = false;
         }
         
-        // --- 추가: 시작 지점 통과 시 저장된 진행률 초기화 ---
         if (lastProgress > 0 && player.worldX > stageStartX) {
             lastProgress = 0;
         }
@@ -292,26 +294,28 @@ window.onload = function() {
             }
         }
         
-        for (const coin of iceCoins) { if (coin.active) { const distSq = (player.worldX - coin.worldX)**2 + (player.worldY - coin.worldY)**2; if (distSq < (player.radius + coin.radius)**2) { coin.active = false; player.isFrozen = true; player.freezeEndTime = time + 3000; player.dx = 0; player.dy = 0; } } }
-        for (const coin of rainbowCoins) { if (coin.active) { const distSq = (player.worldX - coin.worldX)**2 + (player.worldY - coin.worldY)**2; if (distSq < (player.radius + coin.radius)**2) { coin.active = false; player.isBoosted = true; player.boostEndTime = time + 5000; } } }
-        
-        for (const coin of redCoins) { 
-            if (coin.active) { 
-                const distSq = (player.worldX - coin.worldX)**2 + (player.worldY - coin.worldY)**2; 
-                if (distSq < (player.radius + coin.radius)**2) { 
-                    coin.active = false; 
-                    const attackCount = 10 + Math.floor((currentStage - 1) / 2);
-                    attackEvents.push({ count: attackCount, nextSpawnTime: time }); 
+        if (!player.isInvincible) {
+            for (const coin of iceCoins) { if (coin.active) { const distSq = (player.worldX - coin.worldX)**2 + (player.worldY - coin.worldY)**2; if (distSq < (player.radius + coin.radius)**2) { coin.active = false; player.isFrozen = true; player.freezeEndTime = time + 3000; player.dx = 0; player.dy = 0; } } }
+            for (const coin of rainbowCoins) { if (coin.active) { const distSq = (player.worldX - coin.worldX)**2 + (player.worldY - coin.worldY)**2; if (distSq < (player.radius + coin.radius)**2) { coin.active = false; player.isBoosted = true; player.boostEndTime = time + 5000; } } }
+            
+            for (const coin of redCoins) { 
+                if (coin.active) { 
+                    const distSq = (player.worldX - coin.worldX)**2 + (player.worldY - coin.worldY)**2; 
+                    if (distSq < (player.radius + coin.radius)**2) { 
+                        coin.active = false; 
+                        const attackCount = 10 + Math.floor((currentStage - 1) / 2);
+                        attackEvents.push({ count: attackCount, nextSpawnTime: time }); 
+                    } 
                 } 
-            } 
-        }
-        
-        for (const coin of invertCoins) {
-            if (coin.active) {
-                const distSq = (player.worldX - coin.worldX)**2 + (player.worldY - coin.worldY)**2;
-                if (distSq < (player.radius + coin.radius)**2) {
-                    coin.active = false;
-                    player.controlsInverted = !player.controlsInverted;
+            }
+            
+            for (const coin of invertCoins) {
+                if (coin.active) {
+                    const distSq = (player.worldX - coin.worldX)**2 + (player.worldY - coin.worldY)**2;
+                    if (distSq < (player.radius + coin.radius)**2) {
+                        coin.active = false;
+                        player.controlsInverted = !player.controlsInverted;
+                    }
                 }
             }
         }
@@ -438,21 +442,39 @@ window.onload = function() {
 
     function updateCoins() {
         [...iceCoins, ...rainbowCoins, ...redCoins, ...invertCoins].forEach(coin => {
-            if (coin.active) {
-                coin.worldX += coin.dx;
-                coin.worldY += coin.dy;
-                const screenLeft = camera.x + coin.radius;
-                const screenRight = camera.x + viewWidth - coin.radius;
-                const screenTop = camera.y + coin.radius;
-                const screenBottom = camera.y + viewHeight - coin.radius;
-                if (coin.worldX < screenLeft || coin.worldX > screenRight) {
-                    coin.dx *= -1;
-                    coin.worldX = Math.max(screenLeft, Math.min(coin.worldX, screenRight));
+            if (!coin.active) return;
+            
+            if (player.isInvincible) {
+                const shieldRadius = player.radius + SHIELD_RADIUS_OFFSET;
+                const distSq = (player.worldX - coin.worldX)**2 + (player.worldY - coin.worldY)**2;
+                if (distSq < (shieldRadius + coin.radius)**2) {
+                    const dist = Math.sqrt(distSq);
+                    const repelX = (coin.worldX - player.worldX) / dist;
+                    const repelY = (coin.worldY - player.worldY) / dist;
+                    
+                    coin.dx = repelX * SHIELD_REPEL_FORCE;
+                    coin.dy = repelY * SHIELD_REPEL_FORCE;
+                    
+                    const overlap = shieldRadius + coin.radius - dist;
+                    coin.worldX += repelX * overlap;
+                    coin.worldY += repelY * overlap;
                 }
-                if (coin.worldY < screenTop || coin.worldY > screenBottom) {
-                    coin.dy *= -1;
-                    coin.worldY = Math.max(screenTop, Math.min(coin.worldY, screenBottom));
-                }
+            }
+
+            coin.worldX += coin.dx;
+            coin.worldY += coin.dy;
+
+            const screenLeft = camera.x + coin.radius;
+            const screenRight = camera.x + viewWidth - coin.radius;
+            const screenTop = camera.y + coin.radius;
+            const screenBottom = camera.y + viewHeight - coin.radius;
+            if (coin.worldX < screenLeft || coin.worldX > screenRight) {
+                coin.dx *= -1;
+                coin.worldX = Math.max(screenLeft, Math.min(coin.worldX, screenRight));
+            }
+            if (coin.worldY < screenTop || coin.worldY > screenBottom) {
+                coin.dy *= -1;
+                coin.worldY = Math.max(screenTop, Math.min(coin.worldY, screenBottom));
             }
         });
     }
@@ -595,7 +617,6 @@ window.onload = function() {
                 attackEvents = [];
                 screenFlash = { alpha: 1.0, color: 'rgba(255, 0, 0, 0.7)', duration: 300, startTime: time };
                 
-                // --- 추가: 사망 시 최종 진행률 기록 ---
                 const stageLength = portalTargetX - stageStartX;
                 const currentProgress = highestX - stageStartX;
                 lastProgress = stageLength > 0 ? Math.min(100, Math.max(0, (currentProgress / stageLength) * 100)) : 0;
@@ -637,7 +658,7 @@ window.onload = function() {
             const pulseAlpha = 0.4 + (Math.sin(time / 200) + 1) * 0.2;
             ctx.fillStyle = `rgba(255, 255, 255, ${pulseAlpha})`;
             ctx.beginPath();
-            ctx.arc(screenX, screenY, player.radius + 6, 0, Math.PI * 2);
+            ctx.arc(screenX, screenY, player.radius + SHIELD_RADIUS_OFFSET, 0, Math.PI * 2);
             ctx.fill();
         }
 
@@ -676,7 +697,7 @@ window.onload = function() {
     function clearGame() {
         if(gameCleared) return; 
         gameCleared = true; 
-        lastProgress = 0; // --- 추가: 클리어 시 진행률 초기화 ---
+        lastProgress = 0;
         const nextStage = currentStage + 1;
         const savedHighestStage = parseInt(localStorage.getItem('highestStage')) || 1;
         if (nextStage > savedHighestStage) {
@@ -791,11 +812,9 @@ window.onload = function() {
         let textColor = 'rgba(255, 255, 255, 0.9)';
 
         if (player.isDead) {
-            // 죽었을 때는 저장된 마지막 진행률을 빨간색으로 표시
             progressPercent = lastProgress;
             textColor = 'rgba(255, 100, 100, 0.9)';
         } else {
-            // 살아있을 때는 실시간 진행률을 흰색으로 표시
             const currentProgress = player.worldX - stageStartX;
             progressPercent = stageLength > 0 ? Math.min(100, Math.max(0, (currentProgress / stageLength) * 100)) : 0;
         }
@@ -1031,7 +1050,7 @@ window.onload = function() {
     }
 
     function resetGame() {
-        lastProgress = 0; // --- 추가: 게임 리셋 시 저장된 진행률 초기화 ---
+        lastProgress = 0;
         localStorage.removeItem('highestStage');
         init(1, true);
     }
@@ -1058,7 +1077,7 @@ window.onload = function() {
         
         if (isFullReset) {
             currentMapSeed = Date.now() + Math.random();
-            lastProgress = 0; // 새 게임 시작 시 진행률 초기화
+            lastProgress = 0;
         }
         
         resetPlayer();
