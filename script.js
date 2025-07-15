@@ -56,6 +56,7 @@ window.onload = function() {
     let highestX = 0; 
     let currentMapSeed = 0;
     let portalTargetX = 0;
+    let stageStartX = 0; // --- 추가: 스테이지 시작 X 좌표 저장 ---
 
     let currentStage = 1; 
     let gameCleared = false; 
@@ -741,10 +742,11 @@ window.onload = function() {
         ctx.fillText('STAGE ' + currentStage, cX, cY);
     }
 
-    // --- 추가: 좌측 상단 진행률 UI 그리기 ---
     function drawProgressUI() {
-        const progress = Math.min(100, (player.worldX / portalTargetX) * 100);
-        const progressText = `${Math.max(0, progress).toFixed(1)}%`;
+        const stageLength = portalTargetX - stageStartX;
+        const currentProgress = player.worldX - stageStartX;
+        const progressPercent = Math.min(100, Math.max(0, (currentProgress / stageLength) * 100));
+        const progressText = `${progressPercent.toFixed(1)}%`;
         
         ctx.font = 'bold 20px sans-serif';
         ctx.textAlign = 'left';
@@ -887,7 +889,7 @@ window.onload = function() {
             drawScreenEffects(time);
             drawControlButtons();
             drawStageUI();
-            drawProgressUI(); // --- 추가 ---
+            drawProgressUI();
             drawResetButton();
         }
         
@@ -919,7 +921,6 @@ window.onload = function() {
         }
     }
 
-    // --- 변경: 코인 생성 위치 로직 수정 ---
     function generateCoin(type, isDuringGame, spawnArea) {
         const stageSpeedMultiplier = 1 + (currentStage - 1) * 0.15;
         const baseSpeedX = 14;
@@ -936,35 +937,33 @@ window.onload = function() {
         let spawnX, spawnY;
 
         if(isDuringGame) {
-            // 게임 중일 때: 화면 중심부를 피해 4분면 중 한 곳에 생성
             const quadrant = Math.floor(Math.random() * 4);
             const halfWidth = viewWidth / 2;
             const halfHeight = viewHeight / 2;
+            const padding = 50; // 중심부에서 얼마나 떨어져 생성할지
 
             switch(quadrant) {
                 case 0: // 좌상
-                    spawnX = camera.x + Math.random() * (halfWidth - 50);
-                    spawnY = camera.y + Math.random() * (halfHeight - 50);
+                    spawnX = camera.x + Math.random() * (halfWidth - padding);
+                    spawnY = camera.y + Math.random() * (halfHeight - padding);
                     break;
                 case 1: // 우상
-                    spawnX = camera.x + halfWidth + 50 + Math.random() * (halfWidth - 50);
-                    spawnY = camera.y + Math.random() * (halfHeight - 50);
+                    spawnX = camera.x + halfWidth + padding + Math.random() * (halfWidth - padding);
+                    spawnY = camera.y + Math.random() * (halfHeight - padding);
                     break;
                 case 2: // 좌하
-                    spawnX = camera.x + Math.random() * (halfWidth - 50);
-                    spawnY = camera.y + halfHeight + 50 + Math.random() * (halfHeight - 50);
+                    spawnX = camera.x + Math.random() * (halfWidth - padding);
+                    spawnY = camera.y + halfHeight + padding + Math.random() * (halfHeight - padding);
                     break;
                 case 3: // 우하
-                    spawnX = camera.x + halfWidth + 50 + Math.random() * (halfWidth - 50);
-                    spawnY = camera.y + halfHeight + 50 + Math.random() * (halfHeight - 50);
+                    spawnX = camera.x + halfWidth + padding + Math.random() * (halfWidth - padding);
+                    spawnY = camera.y + halfHeight + padding + Math.random() * (halfHeight - padding);
                     break;
             }
         } else {
-             // 스테이지 시작 시: 플레이어 주변에 생성
             spawnX = spawnArea.x + Math.random() * spawnArea.width;
             spawnY = spawnArea.y + Math.random() * spawnArea.height;
         }
-
 
         const newCoin = {
             worldX: spawnX, worldY: spawnY,
@@ -1010,7 +1009,9 @@ window.onload = function() {
 
         const startPlatformY = viewHeight - 100;
         const platforms = [];
-        let currentX = -200; let prevY = startPlatformY;
+        let currentX = -200; 
+        stageStartX = currentX; // --- 추가: 스테이지 시작점 저장 ---
+        let prevY = startPlatformY;
         const startPlatformSegmentWidth = 100; const startPlatformSegmentHeight = startPlatformSegmentWidth / 1.7;
         for (let i = 0; i < 10; i++) {
             platforms.push({ worldX: currentX, worldY: prevY, width: startPlatformSegmentWidth, height: startPlatformSegmentHeight, isPhysical: true, initialY: prevY });
