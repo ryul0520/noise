@@ -596,7 +596,22 @@ window.onload = function() {
         const screenX = viewWidth / 2;
         const screenY = viewHeight / 2;
         ctx.save();
+
+        // 플레이어 오라 (무지개 발판 또는 부스트)
+        if (player.onGround && player.standingOnPlatform && player.standingOnPlatform.type === 'rainbow') {
+            const auraRadius = player.radius + 12 + Math.sin(time / 80) * 5;
+            const gradient = ctx.createRadialGradient(screenX, screenY, player.radius, screenX, screenY, auraRadius);
+            const hue = (time / 10) % 360;
+            gradient.addColorStop(0, `hsla(${hue}, 100%, 80%, 0.7)`);
+            gradient.addColorStop(0.5, `hsla(${(hue + 180) % 360}, 100%, 80%, 0.4)`);
+            gradient.addColorStop(1, `hsla(${(hue + 180) % 360}, 100%, 80%, 0)`);
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, auraRadius, 0, 2 * Math.PI);
+            ctx.fill();
+        }
         
+        // 플레이어 본체
         if (player.isFrozen) {
             ctx.fillStyle = 'black';
             ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
@@ -616,55 +631,6 @@ window.onload = function() {
         ctx.restore();
     }
     
-    function drawPlayerEffects(time) {
-        if (player.isDead) return;
-        const screenX = width / 2;
-        const screenY = height / 2;
-        ctx.save();
-
-        if (player.controlsInverted) {
-            const angle = time / 200;
-            const orbitRadius = player.radius * CAMERA_ZOOM + 10;
-            ctx.fillStyle = 'rgba(148, 0, 211, 0.7)';
-            
-            const p1x = screenX + Math.cos(angle) * orbitRadius;
-            const p1y = screenY + Math.sin(angle) * orbitRadius;
-            ctx.beginPath();
-            ctx.arc(p1x, p1y, 4, 0, Math.PI * 2);
-            ctx.fill();
-
-            const p2x = screenX + Math.cos(angle + Math.PI) * orbitRadius;
-            const p2y = screenY + Math.sin(angle + Math.PI) * orbitRadius;
-            ctx.beginPath();
-            ctx.arc(p2x, p2y, 4, 0, Math.PI * 2);
-            ctx.fill();
-        }
-
-        if (player.onGround && player.standingOnPlatform && player.standingOnPlatform.type === 'rainbow') {
-            const auraRadius = player.radius * CAMERA_ZOOM + 12 + Math.sin(time / 80) * 5;
-            const gradient = ctx.createRadialGradient(screenX, screenY, player.radius * CAMERA_ZOOM, screenX, screenY, auraRadius);
-            const hue = (time / 10) % 360;
-            gradient.addColorStop(0, `hsla(${hue}, 100%, 80%, 0.7)`);
-            gradient.addColorStop(0.5, `hsla(${(hue + 180) % 360}, 100%, 80%, 0.4)`);
-            gradient.addColorStop(1, `hsla(${(hue + 180) % 360}, 100%, 80%, 0)`);
-            ctx.fillStyle = gradient;
-            ctx.beginPath();
-            ctx.arc(screenX, screenY, auraRadius, 0, 2 * Math.PI);
-            ctx.fill();
-        } else if (player.isBoosted) {
-            const auraRadius = player.radius * CAMERA_ZOOM + 8 + Math.sin(time / 100) * 3;
-            const gradient = ctx.createRadialGradient(screenX, screenY, player.radius * CAMERA_ZOOM, screenX, screenY, auraRadius);
-            const hue = (time / 15) % 360;
-            gradient.addColorStop(0, `hsla(${hue}, 90%, 70%, 0.5)`);
-            gradient.addColorStop(1, `hsla(${(hue + 60) % 360}, 90%, 70%, 0)`);
-            ctx.fillStyle = gradient;
-            ctx.beginPath();
-            ctx.arc(screenX, screenY, auraRadius, 0, 2 * Math.PI);
-            ctx.fill();
-        }
-        ctx.restore();
-    }
-
     function clearGame() {
         if(gameCleared) return; 
         gameCleared = true; 
@@ -844,11 +810,12 @@ window.onload = function() {
         ctx.fill();
     }
     
-    // --- 변경: 화면 테두리 효과 그리는 함수 ---
+    // --- 변경: 모든 화면 테두리 효과를 그리는 함수 ---
     function drawScreenEffects(time) {
         const pulseAlpha = 0.3 + (Math.sin(time / 300) + 1) * 0.15; // 0.3 ~ 0.6 alpha
         const borderWidth = 20;
 
+        // 효과 우선순위에 따라 테두리 그리기
         if (attackEvents.length > 0) {
             ctx.strokeStyle = `rgba(255, 0, 0, ${pulseAlpha})`;
             ctx.lineWidth = borderWidth;
@@ -866,7 +833,7 @@ window.onload = function() {
             const gradientAngle = time / 1000;
             const gradient = ctx.createConicGradient(gradientAngle, width / 2, height / 2);
             for (let i = 0; i <= 360; i += 30) {
-                gradient.addColorStop(i / 360, `hsl(${i}, 100%, 70%)`);
+                gradient.addColorStop(i / 360, `hsl(${(i + time/10) % 360}, 100%, 70%)`);
             }
             ctx.strokeStyle = gradient;
             ctx.lineWidth = borderWidth;
@@ -906,7 +873,6 @@ window.onload = function() {
         if (gameCleared) {
             updateAndDrawClearEffects();
         } else {
-            drawPlayerEffects(time);
             drawScreenEffects(time);
             drawControlButtons();
             drawStageUI();
