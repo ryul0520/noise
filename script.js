@@ -36,7 +36,7 @@ window.onload = function() {
         rotationAngle: 0, initialX: 200, initialY: 0,
         isFrozen: false, freezeEndTime: 0,
         isBoosted: false, boostEndTime: 0,
-        controlsInverted: false, // --- 변경: invertEndTime 제거 ---
+        controlsInverted: false,
         standingOnPlatform: null,
         isDead: false,
     };
@@ -62,6 +62,9 @@ window.onload = function() {
     let fireworksLaunched = false;
     let rockets = []; 
     let particles = [];
+
+    // --- 추가: 화면 효과용 변수 ---
+    let screenFlash = { alpha: 0 };
     
     const bgCanvas = document.createElement('canvas'), bgCtx = bgCanvas.getContext('2d');
     let bgPattern;
@@ -196,8 +199,6 @@ window.onload = function() {
     function updatePlayer(time) {
         if (gameCleared || player.isDead) return;
         
-        // --- 변경: 시간 기반 효과 해제 로직 삭제 ---
-        
         JUMP_FORCE = BASE_JUMP_FORCE;
         PLAYER_ACCEL = BASE_PLAYER_ACCEL;
         MAX_SPEED = BASE_MAX_SPEED;
@@ -284,7 +285,6 @@ window.onload = function() {
                 const distSq = (player.worldX - coin.worldX)**2 + (player.worldY - coin.worldY)**2;
                 if (distSq < (player.radius + coin.radius)**2) {
                     coin.active = false;
-                    // --- 변경: 효과를 토글(toggle)하는 방식으로 변경 ---
                     player.controlsInverted = !player.controlsInverted;
                 }
             }
@@ -312,8 +312,7 @@ window.onload = function() {
         player.freezeEndTime = 0; 
         player.isBoosted = false; 
         player.boostEndTime = 0;
-        player.controlsInverted = false; // 사망/재시작 시 항상 false로 초기화
-        // --- 변경: invertEndTime 초기화 코드 삭제 ---
+        player.controlsInverted = false;
         player.standingOnPlatform = null;
         player.isDead = false;
         jumpBufferTime = 0;
@@ -529,7 +528,7 @@ window.onload = function() {
         }
     }
 
-    function updateProjectiles() {
+    function updateProjectiles(time) { // --- 변경: time 파라미터 추가 ---
         const projectileSpeedMultiplier = 1 + (currentStage - 1) * 0.08;
         for (let i = hostileProjectiles.length - 1; i >= 0; i--) {
             const p = hostileProjectiles[i];
@@ -561,6 +560,8 @@ window.onload = function() {
                 player.isDead = true;
                 hostileProjectiles.splice(i, 1);
                 attackEvents = [];
+                // --- 변경: 피격 시 스크린 플래시 효과 발동 ---
+                screenFlash = { alpha: 1.0, color: 'rgba(255, 0, 0, 0.7)', duration: 300, startTime: time };
                 createExplosion(viewWidth / 2, viewHeight / 2, 0); 
                 setTimeout(() => {
                     init(currentStage, false);
@@ -831,13 +832,32 @@ window.onload = function() {
         ctx.fill();
     }
     
+    // --- 추가: 모든 화면 효과를 그리는 함수 ---
+    function drawScreenEffects(time) {
+        // 빨강 코인 효과 (공격 이벤트 진행 중)
+        if (attackEvents.length > 0) {
+            const pulseAlpha = 0.2 + (Math.sin(time / 250) + 1) * 0.1; // 0.2 ~ 0.4 사이로 부드럽게 깜빡임
+            ctx.strokeStyle = `rgba(255, 0, 0, ${pulseAlpha})`;
+            ctx.lineWidth = 20;
+            ctx.strokeRect(0, 0, width, height);
+        }
+
+        // 피격 효과 (스크린 플래시)
+        if (screenFlash.alpha > 0) {
+            const elapsedTime = time - screenFlash.startTime;
+            screenFlash.alpha = 1.0 - (elapsedTime / screenFlash.duration);
+            ctx.fillStyle = screenFlash.color.replace(/, [0-9.]+\)/, `, ${Math.max(0, screenFlash.alpha)})`);
+            ctx.fillRect(0, 0, width, height);
+        }
+    }
+
     let lastTime = 0;
     function animate(time) {
         if(!lastTime) lastTime = time;
         updatePlayer(time);
         updateCoins();
         updateAttackEvents(time);
-        updateProjectiles();
+        updateProjectiles(time); // --- 변경: time 전달 ---
         camera.x = player.worldX - (viewWidth / 2);
         camera.y = player.worldY - (viewHeight / 2);
         ctx.save();
@@ -848,22 +868,26 @@ window.onload = function() {
         drawProjectiles(time);
         drawPlayer(time);
         ctx.restore(); 
-        if (!gameCleared) {
+
+        // --- 변경: UI 및 효과 그리기 순서 정리 ---
+        if (gameCleared) {
+            updateAndDrawClearEffects();
+        } else {
+            drawScreenEffects(time); // 화면 효과 먼저 그리기
             drawControlButtons();
             drawStageUI();
             drawResetButton();
         }
-        if (gameCleared) {
-            updateAndDrawClearEffects();
-        }
+        
         requestAnimationFrame(animate);
     }
     
+    // --- 변경: 코인 스폰 확률 2배 증가 ---
     function getCoinSpawnChance(stage) {
         if (stage <= 1) return 0;
-        const baseChance = 0.20;
-        const incrementPerStage = 0.05;
-        const maxChance = 0.80;
+        const baseChance = 0.40; // 0.20 -> 0.40
+        const incrementPerStage = 0.10; // 0.05 -> 0.10
+        const maxChance = 0.95; // 0.80 -> 0.95
         return Math.min(maxChance, baseChance + (stage - 2) * incrementPerStage);
     }
     
@@ -933,6 +957,7 @@ window.onload = function() {
         rockets = []; particles = []; highestX = 0;
         hostileProjectiles = [];
         attackEvents = [];
+        screenFlash = { alpha: 0 }; // 화면 효과 초기화
         if (isFullReset) {
             currentMapSeed = Date.now() + Math.random();
             iceCoins = []; rainbowCoins = []; redCoins = []; invertCoins = [];
