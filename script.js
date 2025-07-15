@@ -38,6 +38,8 @@ window.onload = function() {
         controlsInverted: false,
         standingOnPlatform: null,
         isDead: false,
+        isInvincible: false, // --- 추가: 시작 무적 상태 ---
+        invincibleEndTime: 0, // --- 추가: 무적 종료 시간 ---
     };
 
     let jumpBufferTime = 0;
@@ -199,6 +201,11 @@ window.onload = function() {
     function updatePlayer(time) {
         if (gameCleared || player.isDead) return;
         
+        // --- 추가: 무적 시간 체크 ---
+        if (player.isInvincible && time > player.invincibleEndTime) {
+            player.isInvincible = false;
+        }
+        
         JUMP_FORCE = BASE_JUMP_FORCE;
         PLAYER_ACCEL = BASE_PLAYER_ACCEL;
         MAX_SPEED = BASE_MAX_SPEED;
@@ -282,7 +289,18 @@ window.onload = function() {
         
         for (const coin of iceCoins) { if (coin.active) { const distSq = (player.worldX - coin.worldX)**2 + (player.worldY - coin.worldY)**2; if (distSq < (player.radius + coin.radius)**2) { coin.active = false; player.isFrozen = true; player.freezeEndTime = time + 3000; player.dx = 0; player.dy = 0; } } }
         for (const coin of rainbowCoins) { if (coin.active) { const distSq = (player.worldX - coin.worldX)**2 + (player.worldY - coin.worldY)**2; if (distSq < (player.radius + coin.radius)**2) { coin.active = false; player.isBoosted = true; player.boostEndTime = time + 5000; } } }
-        for (const coin of redCoins) { if (coin.active) { const distSq = (player.worldX - coin.worldX)**2 + (player.worldY - coin.worldY)**2; if (distSq < (player.radius + coin.radius)**2) { coin.active = false; attackEvents.push({ count: 10, nextSpawnTime: time }); } } }
+        
+        // --- 변경: 빨강 코인 공격 횟수 스테이지 비례 증가 ---
+        for (const coin of redCoins) { 
+            if (coin.active) { 
+                const distSq = (player.worldX - coin.worldX)**2 + (player.worldY - coin.worldY)**2; 
+                if (distSq < (player.radius + coin.radius)**2) { 
+                    coin.active = false; 
+                    const attackCount = 10 + Math.floor((currentStage - 1) / 2);
+                    attackEvents.push({ count: attackCount, nextSpawnTime: time }); 
+                } 
+            } 
+        }
         
         for (const coin of invertCoins) {
             if (coin.active) {
@@ -319,6 +337,8 @@ window.onload = function() {
         player.controlsInverted = false;
         player.standingOnPlatform = null;
         player.isDead = false;
+        player.isInvincible = false; // --- 추가: 무적 상태 초기화 ---
+        player.invincibleEndTime = 0; // --- 추가: 무적 시간 초기화 ---
         jumpBufferTime = 0;
     }
     
@@ -511,12 +531,17 @@ window.onload = function() {
         ctx.restore();
     }
     
+    // --- 변경: 빨강 코인 공격 속도 스테이지 비례 증가 ---
     function updateAttackEvents(time) {
         for (let i = attackEvents.length - 1; i >= 0; i--) {
             const event = attackEvents[i];
             if (event.count > 0 && time >= event.nextSpawnTime) {
                 event.count--;
-                event.nextSpawnTime = time + 1500;
+                const baseInterval = 1500;
+                const speedUpFactor = 1 - (currentStage * 0.04);
+                const interval = Math.max(200, baseInterval * speedUpFactor); // 최소 간격 200ms
+                event.nextSpawnTime = time + interval;
+
                 hostileProjectiles.push({
                     worldX: player.worldX,
                     worldY: camera.y - 30,
@@ -560,7 +585,9 @@ window.onload = function() {
             p.worldX += p.dx;
             p.worldY += p.dy;
             const distSqToPlayer = (player.worldX - p.worldX)**2 + (player.worldY - p.worldY)**2;
-            if (!player.isDead && distSqToPlayer < (player.radius + p.radius)**2) {
+            
+            // --- 변경: 무적 상태일 때는 피격되지 않음 ---
+            if (!player.isInvincible && !player.isDead && distSqToPlayer < (player.radius + p.radius)**2) {
                 player.isDead = true;
                 hostileProjectiles.splice(i, 1);
                 attackEvents = [];
@@ -598,6 +625,15 @@ window.onload = function() {
         const screenX = viewWidth / 2;
         const screenY = viewHeight / 2;
         ctx.save();
+
+        // --- 추가: 무적 상태일 때 보호막 표시 ---
+        if (player.isInvincible) {
+            const pulseAlpha = 0.4 + (Math.sin(time / 200) + 1) * 0.2;
+            ctx.fillStyle = `rgba(255, 255, 255, ${pulseAlpha})`;
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, player.radius + 6, 0, Math.PI * 2);
+            ctx.fill();
+        }
 
         if (player.onGround && player.standingOnPlatform && player.standingOnPlatform.type === 'rainbow') {
             const auraRadius = player.radius + 12 + Math.sin(time / 80) * 5;
@@ -745,7 +781,6 @@ window.onload = function() {
     function drawProgressUI() {
         const stageLength = portalTargetX - stageStartX;
         const currentProgress = player.worldX - stageStartX;
-        // stageLength가 0이면 0으로 처리 (오류 방지)
         const progressPercent = stageLength > 0 ? Math.min(100, Math.max(0, (currentProgress / stageLength) * 100)) : 0;
         const progressText = `${progressPercent.toFixed(1)}%`;
         
@@ -944,19 +979,19 @@ window.onload = function() {
             const padding = 50;
 
             switch(quadrant) {
-                case 0: // 좌상
+                case 0:
                     spawnX = camera.x + Math.random() * (halfWidth - padding);
                     spawnY = camera.y + Math.random() * (halfHeight - padding);
                     break;
-                case 1: // 우상
+                case 1:
                     spawnX = camera.x + halfWidth + padding + Math.random() * (halfWidth - padding);
                     spawnY = camera.y + Math.random() * (halfHeight - padding);
                     break;
-                case 2: // 좌하
+                case 2:
                     spawnX = camera.x + Math.random() * (halfWidth - padding);
                     spawnY = camera.y + halfHeight + padding + Math.random() * (halfHeight - padding);
                     break;
-                case 3: // 우하
+                case 3:
                     spawnX = camera.x + halfWidth + padding + Math.random() * (halfWidth - padding);
                     spawnY = camera.y + halfHeight + padding + Math.random() * (halfHeight - padding);
                     break;
@@ -1007,6 +1042,8 @@ window.onload = function() {
         }
         
         resetPlayer();
+        player.isInvincible = true; // --- 추가: 무적 상태 시작 ---
+        player.invincibleEndTime = Date.now() + 3000; // --- 추가: 무적 시간 3초 설정 ---
 
         const startPlatformY = viewHeight - 100;
         const platforms = [];
@@ -1018,7 +1055,6 @@ window.onload = function() {
             currentX += startPlatformSegmentWidth;
         }
         
-        // --- 변경: 시작 발판의 '오른쪽 끝'을 0% 기준으로 설정 ---
         stageStartX = currentX - startPlatformSegmentWidth;
         
         player.initialX = 150; player.initialY = startPlatformY - 150;
