@@ -597,7 +597,6 @@ window.onload = function() {
         const screenY = viewHeight / 2;
         ctx.save();
 
-        // 플레이어 오라 (무지개 발판 또는 부스트)
         if (player.onGround && player.standingOnPlatform && player.standingOnPlatform.type === 'rainbow') {
             const auraRadius = player.radius + 12 + Math.sin(time / 80) * 5;
             const gradient = ctx.createRadialGradient(screenX, screenY, player.radius, screenX, screenY, auraRadius);
@@ -611,7 +610,6 @@ window.onload = function() {
             ctx.fill();
         }
         
-        // 플레이어 본체
         if (player.isFrozen) {
             ctx.fillStyle = 'black';
             ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
@@ -810,12 +808,10 @@ window.onload = function() {
         ctx.fill();
     }
     
-    // --- 변경: 모든 화면 테두리 효과를 그리는 함수 ---
     function drawScreenEffects(time) {
-        const pulseAlpha = 0.3 + (Math.sin(time / 300) + 1) * 0.15; // 0.3 ~ 0.6 alpha
+        const pulseAlpha = 0.3 + (Math.sin(time / 300) + 1) * 0.15;
         const borderWidth = 20;
 
-        // 효과 우선순위에 따라 테두리 그리기
         if (attackEvents.length > 0) {
             ctx.strokeStyle = `rgba(255, 0, 0, ${pulseAlpha})`;
             ctx.lineWidth = borderWidth;
@@ -830,8 +826,7 @@ window.onload = function() {
             ctx.strokeRect(0, 0, width, height);
         } else if (player.isBoosted) {
             ctx.save();
-            const gradientAngle = time / 1000;
-            const gradient = ctx.createConicGradient(gradientAngle, width / 2, height / 2);
+            const gradient = ctx.createConicGradient(time / 1000, width / 2, height / 2);
             for (let i = 0; i <= 360; i += 30) {
                 gradient.addColorStop(i / 360, `hsl(${(i + time/10) % 360}, 100%, 70%)`);
             }
@@ -841,7 +836,6 @@ window.onload = function() {
             ctx.restore();
         }
 
-        // 피격 플래시는 항상 위에 그려짐
         if (screenFlash.alpha > 0) {
             const elapsedTime = time - screenFlash.startTime;
             screenFlash.alpha = 1.0 - (elapsedTime / screenFlash.duration);
@@ -907,7 +901,7 @@ window.onload = function() {
         }
     }
 
-    function generateCoin(type) {
+    function generateCoin(type, spawnArea) {
         const stageSpeedMultiplier = 1 + (currentStage - 1) * 0.15;
         const baseSpeedX = 14;
         const baseSpeedY = 7; 
@@ -920,12 +914,14 @@ window.onload = function() {
             speed = Math.sqrt(dx * dx + dy * dy);
         } while (speed < MIN_COIN_SPEED || Math.abs(dx) < 1.5 || Math.abs(dy) < 1.5);
         
-        const spawnableWidth = viewWidth - COIN_SPAWN_PADDING * 2;
-        const spawnableHeight = viewHeight - COIN_SPAWN_PADDING * 2;
+        const spawnableWidth = (spawnArea ? spawnArea.width : viewWidth) - COIN_SPAWN_PADDING * 2;
+        const spawnableHeight = (spawnArea ? spawnArea.height : viewHeight) - COIN_SPAWN_PADDING * 2;
+        const spawnX = (spawnArea ? spawnArea.x : camera.x) + COIN_SPAWN_PADDING;
+        const spawnY = (spawnArea ? spawnArea.y : camera.y) + COIN_SPAWN_PADDING;
 
         const newCoin = {
-            worldX: camera.x + COIN_SPAWN_PADDING + Math.random() * spawnableWidth,
-            worldY: camera.y + COIN_SPAWN_PADDING + Math.random() * spawnableHeight,
+            worldX: spawnX + Math.random() * spawnableWidth,
+            worldY: spawnY + Math.random() * spawnableHeight,
             radius: 15, active: true, dx: dx, dy: dy,
         };
 
@@ -957,11 +953,31 @@ window.onload = function() {
         hostileProjectiles = [];
         attackEvents = [];
         screenFlash = { alpha: 0 };
+        
+        // --- 변경: 코인 초기화를 항상 실행 ---
+        iceCoins = []; rainbowCoins = []; redCoins = []; invertCoins = [];
+        
         if (isFullReset) {
             currentMapSeed = Date.now() + Math.random();
-            iceCoins = []; rainbowCoins = []; redCoins = []; invertCoins = [];
         }
+        
         resetPlayer();
+
+        // --- 추가: 시작 시 코인 생성 ---
+        const initialCoinCount = Math.max(0, currentStage - 4);
+        if (initialCoinCount > 0) {
+            const initialSpawnArea = {
+                x: player.initialX - viewWidth / 2,
+                y: player.initialY - viewHeight / 2,
+                width: viewWidth,
+                height: viewHeight
+            };
+            for (let i = 0; i < initialCoinCount; i++) {
+                const type = COIN_TYPES[Math.floor(Math.random() * COIN_TYPES.length)];
+                generateCoin(type, initialSpawnArea);
+            }
+        }
+
         if (!spawnCheckTimer) {
             spawnCheckTimer = setInterval(spawnManager, SPAWN_CHECK_INTERVAL);
         }
