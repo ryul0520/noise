@@ -204,13 +204,10 @@ window.onload = function() {
 
         const jumpBufferValid = Date.now() - jumpBufferTime < JUMP_BUFFER_DURATION;
 
-        // --- 변경된 부분: 얼음 상태 처리 ---
-        // 얼음 효과가 만료되었는지 먼저 체크
         if (player.isFrozen && time > player.freezeEndTime) {
             player.isFrozen = false; 
         }
 
-        // 얼어있지 않을 때만 움직임과 물리 효과를 적용
         if (!player.isFrozen) {
             if (player.isBoosted) {
                 if (time > player.boostEndTime) {
@@ -249,11 +246,9 @@ window.onload = function() {
             if (Math.abs(player.dx) > MAX_SPEED) player.dx = Math.sign(player.dx) * MAX_SPEED;
             if (!player.onGround) player.dy += GRAVITY;
         } else {
-            // 얼어있으면 속도를 강제로 0으로 고정
             player.dx = 0;
             player.dy = 0;
         }
-        // --- 변경된 부분 끝 ---
         
         const physicalObjects = worldObjects.filter(o => o.isPhysical);
         const lastPlayerY = player.worldY;
@@ -284,7 +279,6 @@ window.onload = function() {
             }
         }
         
-        // 코인 충돌 판정은 얼음 상태와 관계없이 항상 실행됨
         for (const coin of iceCoins) { if (coin.active) { const distSq = (player.worldX - coin.worldX)**2 + (player.worldY - coin.worldY)**2; if (distSq < (player.radius + coin.radius)**2) { coin.active = false; player.isFrozen = true; player.freezeEndTime = time + 3000; player.dx = 0; player.dy = 0; } } }
         for (const coin of rainbowCoins) { if (coin.active) { const distSq = (player.worldX - coin.worldX)**2 + (player.worldY - coin.worldY)**2; if (distSq < (player.radius + coin.radius)**2) { coin.active = false; player.isBoosted = true; player.boostEndTime = time + 5000; } } }
         for (const coin of redCoins) { if (coin.active) { const distSq = (player.worldX - coin.worldX)**2 + (player.worldY - coin.worldY)**2; if (distSq < (player.radius + coin.radius)**2) { coin.active = false; attackEvents.push({ count: 10, nextSpawnTime: time }); } } }
@@ -850,14 +844,37 @@ window.onload = function() {
         ctx.fill();
     }
     
+    // --- 변경: 화면 테두리 효과 그리는 함수 ---
     function drawScreenEffects(time) {
+        const pulseAlpha = 0.3 + (Math.sin(time / 300) + 1) * 0.15; // 0.3 ~ 0.6 alpha
+        const borderWidth = 20;
+
         if (attackEvents.length > 0) {
-            const pulseAlpha = 0.2 + (Math.sin(time / 250) + 1) * 0.1;
             ctx.strokeStyle = `rgba(255, 0, 0, ${pulseAlpha})`;
-            ctx.lineWidth = 20;
+            ctx.lineWidth = borderWidth;
             ctx.strokeRect(0, 0, width, height);
+        } else if (player.isFrozen) {
+            ctx.strokeStyle = `rgba(0, 0, 0, ${pulseAlpha})`;
+            ctx.lineWidth = borderWidth;
+            ctx.strokeRect(0, 0, width, height);
+        } else if (player.controlsInverted) {
+            ctx.strokeStyle = `rgba(148, 0, 211, ${pulseAlpha})`;
+            ctx.lineWidth = borderWidth;
+            ctx.strokeRect(0, 0, width, height);
+        } else if (player.isBoosted) {
+            ctx.save();
+            const gradientAngle = time / 1000;
+            const gradient = ctx.createConicGradient(gradientAngle, width / 2, height / 2);
+            for (let i = 0; i <= 360; i += 30) {
+                gradient.addColorStop(i / 360, `hsl(${i}, 100%, 70%)`);
+            }
+            ctx.strokeStyle = gradient;
+            ctx.lineWidth = borderWidth;
+            ctx.strokeRect(0, 0, width, height);
+            ctx.restore();
         }
 
+        // 피격 플래시는 항상 위에 그려짐
         if (screenFlash.alpha > 0) {
             const elapsedTime = time - screenFlash.startTime;
             screenFlash.alpha = 1.0 - (elapsedTime / screenFlash.duration);
