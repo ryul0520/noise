@@ -63,7 +63,6 @@ window.onload = function() {
     let rockets = []; 
     let particles = [];
 
-    // --- 추가: 화면 효과용 변수 ---
     let screenFlash = { alpha: 0 };
     
     const bgCanvas = document.createElement('canvas'), bgCtx = bgCanvas.getContext('2d');
@@ -205,47 +204,56 @@ window.onload = function() {
 
         const jumpBufferValid = Date.now() - jumpBufferTime < JUMP_BUFFER_DURATION;
 
-        if (player.isFrozen) { 
-            if (time > player.freezeEndTime) player.isFrozen = false; 
-            return; 
+        // --- 변경된 부분: 얼음 상태 처리 ---
+        // 얼음 효과가 만료되었는지 먼저 체크
+        if (player.isFrozen && time > player.freezeEndTime) {
+            player.isFrozen = false; 
         }
 
-        if (player.isBoosted) {
-            if (time > player.boostEndTime) {
-                player.isBoosted = false;
-            } else {
-                MAX_SPEED = BASE_MAX_SPEED * 1.5;
-                JUMP_FORCE = BASE_JUMP_FORCE * 1.5;
+        // 얼어있지 않을 때만 움직임과 물리 효과를 적용
+        if (!player.isFrozen) {
+            if (player.isBoosted) {
+                if (time > player.boostEndTime) {
+                    player.isBoosted = false;
+                } else {
+                    MAX_SPEED = BASE_MAX_SPEED * 1.5;
+                    JUMP_FORCE = BASE_JUMP_FORCE * 1.5;
+                }
             }
-        }
-        
-        if (player.onGround && player.standingOnPlatform && player.standingOnPlatform.type === 'rainbow') {
-            JUMP_FORCE = BASE_JUMP_FORCE * 1.8;
-            PLAYER_ACCEL = BASE_PLAYER_ACCEL * 1.5;
-            MAX_SPEED = BASE_MAX_SPEED * 1.5;
-        }
+            
+            if (player.onGround && player.standingOnPlatform && player.standingOnPlatform.type === 'rainbow') {
+                JUMP_FORCE = BASE_JUMP_FORCE * 1.8;
+                PLAYER_ACCEL = BASE_PLAYER_ACCEL * 1.5;
+                MAX_SPEED = BASE_MAX_SPEED * 1.5;
+            }
 
-        const moveLeft = keys['keya'] || keys['arrowleft'] || isTouchingLeft;
-        const moveRight = keys['keyd'] || keys['arrowright'] || isTouchingRight;
+            const moveLeft = keys['keya'] || keys['arrowleft'] || isTouchingLeft;
+            const moveRight = keys['keyd'] || keys['arrowright'] || isTouchingRight;
 
-        if (player.controlsInverted) {
-            if (moveLeft) player.dx += PLAYER_ACCEL;
-            if (moveRight) player.dx -= PLAYER_ACCEL;
+            if (player.controlsInverted) {
+                if (moveLeft) player.dx += PLAYER_ACCEL;
+                if (moveRight) player.dx -= PLAYER_ACCEL;
+            } else {
+                if (moveLeft) player.dx -= PLAYER_ACCEL;
+                if (moveRight) player.dx += PLAYER_ACCEL;
+            }
+            
+            if (jumpBufferValid && player.onGround) {
+                player.dy = JUMP_FORCE;
+                player.onGround = false;
+                jumpBufferTime = 0;
+            }
+
+            player.dx *= FRICTION;
+            if (Math.abs(player.dx) < 0.1) player.dx = 0;
+            if (Math.abs(player.dx) > MAX_SPEED) player.dx = Math.sign(player.dx) * MAX_SPEED;
+            if (!player.onGround) player.dy += GRAVITY;
         } else {
-            if (moveLeft) player.dx -= PLAYER_ACCEL;
-            if (moveRight) player.dx += PLAYER_ACCEL;
+            // 얼어있으면 속도를 강제로 0으로 고정
+            player.dx = 0;
+            player.dy = 0;
         }
-        
-        if (jumpBufferValid && player.onGround) {
-            player.dy = JUMP_FORCE;
-            player.onGround = false;
-            jumpBufferTime = 0;
-        }
-
-        player.dx *= FRICTION;
-        if (Math.abs(player.dx) < 0.1) player.dx = 0;
-        if (Math.abs(player.dx) > MAX_SPEED) player.dx = Math.sign(player.dx) * MAX_SPEED;
-        if (!player.onGround) player.dy += GRAVITY;
+        // --- 변경된 부분 끝 ---
         
         const physicalObjects = worldObjects.filter(o => o.isPhysical);
         const lastPlayerY = player.worldY;
@@ -276,6 +284,7 @@ window.onload = function() {
             }
         }
         
+        // 코인 충돌 판정은 얼음 상태와 관계없이 항상 실행됨
         for (const coin of iceCoins) { if (coin.active) { const distSq = (player.worldX - coin.worldX)**2 + (player.worldY - coin.worldY)**2; if (distSq < (player.radius + coin.radius)**2) { coin.active = false; player.isFrozen = true; player.freezeEndTime = time + 3000; player.dx = 0; player.dy = 0; } } }
         for (const coin of rainbowCoins) { if (coin.active) { const distSq = (player.worldX - coin.worldX)**2 + (player.worldY - coin.worldY)**2; if (distSq < (player.radius + coin.radius)**2) { coin.active = false; player.isBoosted = true; player.boostEndTime = time + 5000; } } }
         for (const coin of redCoins) { if (coin.active) { const distSq = (player.worldX - coin.worldX)**2 + (player.worldY - coin.worldY)**2; if (distSq < (player.radius + coin.radius)**2) { coin.active = false; attackEvents.push({ count: 10, nextSpawnTime: time }); } } }
@@ -528,7 +537,7 @@ window.onload = function() {
         }
     }
 
-    function updateProjectiles(time) { // --- 변경: time 파라미터 추가 ---
+    function updateProjectiles(time) {
         const projectileSpeedMultiplier = 1 + (currentStage - 1) * 0.08;
         for (let i = hostileProjectiles.length - 1; i >= 0; i--) {
             const p = hostileProjectiles[i];
@@ -560,9 +569,8 @@ window.onload = function() {
                 player.isDead = true;
                 hostileProjectiles.splice(i, 1);
                 attackEvents = [];
-                // --- 변경: 피격 시 스크린 플래시 효과 발동 ---
                 screenFlash = { alpha: 1.0, color: 'rgba(255, 0, 0, 0.7)', duration: 300, startTime: time };
-                createExplosion(viewWidth / 2, viewHeight / 2, 0); 
+                createExplosion(player.worldX - camera.x, player.worldY - camera.y, 0); 
                 setTimeout(() => {
                     init(currentStage, false);
                 }, 500);
@@ -591,49 +599,10 @@ window.onload = function() {
     
     function drawPlayer(time) {
         if (player.isDead) return;
-        const screenX = viewWidth / 2, screenY = viewHeight / 2;
+        const screenX = viewWidth / 2;
+        const screenY = viewHeight / 2;
         ctx.save();
         
-        if (player.controlsInverted) {
-            const angle = time / 200;
-            const orbitRadius = player.radius + 10;
-            ctx.fillStyle = 'rgba(148, 0, 211, 0.7)';
-            
-            const p1x = screenX + Math.cos(angle) * orbitRadius;
-            const p1y = screenY + Math.sin(angle) * orbitRadius;
-            ctx.beginPath();
-            ctx.arc(p1x, p1y, 4, 0, Math.PI * 2);
-            ctx.fill();
-
-            const p2x = screenX + Math.cos(angle + Math.PI) * orbitRadius;
-            const p2y = screenY + Math.sin(angle + Math.PI) * orbitRadius;
-            ctx.beginPath();
-            ctx.arc(p2x, p2y, 4, 0, Math.PI * 2);
-            ctx.fill();
-        }
-
-        if (player.onGround && player.standingOnPlatform && player.standingOnPlatform.type === 'rainbow') {
-            const auraRadius = player.radius + 12 + Math.sin(time / 80) * 5;
-            const gradient = ctx.createRadialGradient(screenX, screenY, player.radius, screenX, screenY, auraRadius);
-            const hue = (time / 10) % 360;
-            gradient.addColorStop(0, `hsla(${hue}, 100%, 80%, 0.7)`);
-            gradient.addColorStop(0.5, `hsla(${(hue + 180) % 360}, 100%, 80%, 0.4)`);
-            gradient.addColorStop(1, `hsla(${(hue + 180) % 360}, 100%, 80%, 0)`);
-            ctx.fillStyle = gradient;
-            ctx.beginPath();
-            ctx.arc(screenX, screenY, auraRadius, 0, 2 * Math.PI);
-            ctx.fill();
-        } else if (player.isBoosted) {
-            const auraRadius = player.radius + 8 + Math.sin(time / 100) * 3;
-            const gradient = ctx.createRadialGradient(screenX, screenY, player.radius, screenX, screenY, auraRadius);
-            const hue = (time / 15) % 360;
-            gradient.addColorStop(0, `hsla(${hue}, 90%, 70%, 0.5)`);
-            gradient.addColorStop(1, `hsla(${(hue + 60) % 360}, 90%, 70%, 0)`);
-            ctx.fillStyle = gradient;
-            ctx.beginPath();
-            ctx.arc(screenX, screenY, auraRadius, 0, 2 * Math.PI);
-            ctx.fill();
-        }
         if (player.isFrozen) {
             ctx.fillStyle = 'black';
             ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
@@ -653,6 +622,55 @@ window.onload = function() {
         ctx.restore();
     }
     
+    function drawPlayerEffects(time) {
+        if (player.isDead) return;
+        const screenX = width / 2;
+        const screenY = height / 2;
+        ctx.save();
+
+        if (player.controlsInverted) {
+            const angle = time / 200;
+            const orbitRadius = player.radius * CAMERA_ZOOM + 10;
+            ctx.fillStyle = 'rgba(148, 0, 211, 0.7)';
+            
+            const p1x = screenX + Math.cos(angle) * orbitRadius;
+            const p1y = screenY + Math.sin(angle) * orbitRadius;
+            ctx.beginPath();
+            ctx.arc(p1x, p1y, 4, 0, Math.PI * 2);
+            ctx.fill();
+
+            const p2x = screenX + Math.cos(angle + Math.PI) * orbitRadius;
+            const p2y = screenY + Math.sin(angle + Math.PI) * orbitRadius;
+            ctx.beginPath();
+            ctx.arc(p2x, p2y, 4, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        if (player.onGround && player.standingOnPlatform && player.standingOnPlatform.type === 'rainbow') {
+            const auraRadius = player.radius * CAMERA_ZOOM + 12 + Math.sin(time / 80) * 5;
+            const gradient = ctx.createRadialGradient(screenX, screenY, player.radius * CAMERA_ZOOM, screenX, screenY, auraRadius);
+            const hue = (time / 10) % 360;
+            gradient.addColorStop(0, `hsla(${hue}, 100%, 80%, 0.7)`);
+            gradient.addColorStop(0.5, `hsla(${(hue + 180) % 360}, 100%, 80%, 0.4)`);
+            gradient.addColorStop(1, `hsla(${(hue + 180) % 360}, 100%, 80%, 0)`);
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, auraRadius, 0, 2 * Math.PI);
+            ctx.fill();
+        } else if (player.isBoosted) {
+            const auraRadius = player.radius * CAMERA_ZOOM + 8 + Math.sin(time / 100) * 3;
+            const gradient = ctx.createRadialGradient(screenX, screenY, player.radius * CAMERA_ZOOM, screenX, screenY, auraRadius);
+            const hue = (time / 15) % 360;
+            gradient.addColorStop(0, `hsla(${hue}, 90%, 70%, 0.5)`);
+            gradient.addColorStop(1, `hsla(${(hue + 60) % 360}, 90%, 70%, 0)`);
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, auraRadius, 0, 2 * Math.PI);
+            ctx.fill();
+        }
+        ctx.restore();
+    }
+
     function clearGame() {
         if(gameCleared) return; 
         gameCleared = true; 
@@ -832,17 +850,14 @@ window.onload = function() {
         ctx.fill();
     }
     
-    // --- 추가: 모든 화면 효과를 그리는 함수 ---
     function drawScreenEffects(time) {
-        // 빨강 코인 효과 (공격 이벤트 진행 중)
         if (attackEvents.length > 0) {
-            const pulseAlpha = 0.2 + (Math.sin(time / 250) + 1) * 0.1; // 0.2 ~ 0.4 사이로 부드럽게 깜빡임
+            const pulseAlpha = 0.2 + (Math.sin(time / 250) + 1) * 0.1;
             ctx.strokeStyle = `rgba(255, 0, 0, ${pulseAlpha})`;
             ctx.lineWidth = 20;
             ctx.strokeRect(0, 0, width, height);
         }
 
-        // 피격 효과 (스크린 플래시)
         if (screenFlash.alpha > 0) {
             const elapsedTime = time - screenFlash.startTime;
             screenFlash.alpha = 1.0 - (elapsedTime / screenFlash.duration);
@@ -854,12 +869,14 @@ window.onload = function() {
     let lastTime = 0;
     function animate(time) {
         if(!lastTime) lastTime = time;
+
         updatePlayer(time);
         updateCoins();
         updateAttackEvents(time);
-        updateProjectiles(time); // --- 변경: time 전달 ---
+        updateProjectiles(time);
         camera.x = player.worldX - (viewWidth / 2);
         camera.y = player.worldY - (viewHeight / 2);
+        
         ctx.save();
         ctx.scale(1 / CAMERA_ZOOM, 1 / CAMERA_ZOOM);
         renderWorld(time);
@@ -869,11 +886,11 @@ window.onload = function() {
         drawPlayer(time);
         ctx.restore(); 
 
-        // --- 변경: UI 및 효과 그리기 순서 정리 ---
         if (gameCleared) {
             updateAndDrawClearEffects();
         } else {
-            drawScreenEffects(time); // 화면 효과 먼저 그리기
+            drawPlayerEffects(time);
+            drawScreenEffects(time);
             drawControlButtons();
             drawStageUI();
             drawResetButton();
@@ -882,12 +899,11 @@ window.onload = function() {
         requestAnimationFrame(animate);
     }
     
-    // --- 변경: 코인 스폰 확률 2배 증가 ---
     function getCoinSpawnChance(stage) {
         if (stage <= 1) return 0;
-        const baseChance = 0.40; // 0.20 -> 0.40
-        const incrementPerStage = 0.10; // 0.05 -> 0.10
-        const maxChance = 0.95; // 0.80 -> 0.95
+        const baseChance = 0.40;
+        const incrementPerStage = 0.10;
+        const maxChance = 0.95; 
         return Math.min(maxChance, baseChance + (stage - 2) * incrementPerStage);
     }
     
@@ -957,7 +973,7 @@ window.onload = function() {
         rockets = []; particles = []; highestX = 0;
         hostileProjectiles = [];
         attackEvents = [];
-        screenFlash = { alpha: 0 }; // 화면 효과 초기화
+        screenFlash = { alpha: 0 };
         if (isFullReset) {
             currentMapSeed = Date.now() + Math.random();
             iceCoins = []; rainbowCoins = []; redCoins = []; invertCoins = [];
