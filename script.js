@@ -204,15 +204,16 @@ window.onload = function() {
     function updatePlayer(time) {
         if (gameCleared || player.isDead) return;
         
+        // --- ★★★ 변경점 2: 보호막 로직 원래대로 복원 & lastProgress 초기화 로직 유지 ★★★ ---
+        // 보호막 해제 조건을 원래대로 복원합니다. (3초 경과 또는 시작 지점 이탈)
         if (player.isInvincible && (time > player.invincibleEndTime || player.worldX > stageStartX)) {
             player.isInvincible = false;
+            // 보호막이 사라질 때, 마지막 진행도 기록을 0으로 초기화합니다.
+            if (lastProgress > 0) {
+                lastProgress = 0;
+            }
         }
         
-        // --- 변경: 사망 후 기록된 진행도가 있고, 플레이어가 출발선을 넘으면 기록된 진행도를 0으로 초기화 ---
-        if (lastProgress > 0 && player.worldX > stageStartX) {
-            lastProgress = 0;
-        }
-
         JUMP_FORCE = BASE_JUMP_FORCE;
         PLAYER_ACCEL = BASE_PLAYER_ACCEL;
         MAX_SPEED = BASE_MAX_SPEED;
@@ -323,7 +324,17 @@ window.onload = function() {
         if (portal && !gameCleared) { if (checkPlatformCollision(player, portal)) clearGame(); }
         player.rotationAngle += player.dx * 0.02;
         if (player.worldX > highestX) highestX = player.worldX;
-        if (player.worldY > viewHeight / 2 + height + 800) { if (!gameCleared) init(currentStage, false); }
+
+        // --- ★★★ 변경점 1: 낙사 시에도 진행도 저장 ★★★ ---
+        // 떨어져 죽었을 때, lastProgress를 계산하고 게임을 초기화합니다.
+        if (player.worldY > viewHeight / 2 + height + 800) { 
+            if (!gameCleared) {
+                const stageLength = portalTargetX - stageStartX;
+                const currentProgress = highestX - stageStartX;
+                lastProgress = stageLength > 0 ? Math.min(100, Math.max(0, (currentProgress / stageLength) * 100)) : 0;
+                init(currentStage, false);
+            }
+        }
     }
     
     function checkPlatformCollision(p, plat) {
@@ -811,13 +822,10 @@ window.onload = function() {
         let progressPercent = 0;
         let textColor = 'rgba(255, 255, 255, 0.9)';
 
-        // --- 변경: lastProgress 값을 기준으로 진행도 표시 로직 수정 ---
         if (lastProgress > 0) {
-            // 사망 후 리스타트했다면, 마지막 진행도를 빨간색으로 표시
             progressPercent = lastProgress;
             textColor = 'rgba(255, 100, 100, 0.9)';
         } else {
-            // 정상 플레이 중이거나, 출발선을 넘어섰다면 현재 진행도를 계산하여 표시
             const currentProgress = player.worldX - stageStartX;
             progressPercent = stageLength > 0 ? Math.min(100, Math.max(0, (currentProgress / stageLength) * 100)) : 0;
         }
