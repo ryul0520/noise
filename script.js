@@ -38,8 +38,8 @@ window.onload = function() {
         controlsInverted: false,
         standingOnPlatform: null,
         isDead: false,
-        isInvincible: false, // --- 추가: 시작 무적 상태 ---
-        invincibleEndTime: 0, // --- 추가: 무적 종료 시간 ---
+        isInvincible: false,
+        invincibleEndTime: 0,
     };
 
     let jumpBufferTime = 0;
@@ -59,6 +59,7 @@ window.onload = function() {
     let currentMapSeed = 0;
     let portalTargetX = 0;
     let stageStartX = 0;
+    let lastProgress = 0; // --- 추가: 사망 시 최종 진행률 저장 ---
 
     let currentStage = 1; 
     let gameCleared = false; 
@@ -201,11 +202,15 @@ window.onload = function() {
     function updatePlayer(time) {
         if (gameCleared || player.isDead) return;
         
-        // --- 추가: 무적 시간 체크 ---
         if (player.isInvincible && time > player.invincibleEndTime) {
             player.isInvincible = false;
         }
         
+        // --- 추가: 시작 지점 통과 시 저장된 진행률 초기화 ---
+        if (lastProgress > 0 && player.worldX > stageStartX) {
+            lastProgress = 0;
+        }
+
         JUMP_FORCE = BASE_JUMP_FORCE;
         PLAYER_ACCEL = BASE_PLAYER_ACCEL;
         MAX_SPEED = BASE_MAX_SPEED;
@@ -290,7 +295,6 @@ window.onload = function() {
         for (const coin of iceCoins) { if (coin.active) { const distSq = (player.worldX - coin.worldX)**2 + (player.worldY - coin.worldY)**2; if (distSq < (player.radius + coin.radius)**2) { coin.active = false; player.isFrozen = true; player.freezeEndTime = time + 3000; player.dx = 0; player.dy = 0; } } }
         for (const coin of rainbowCoins) { if (coin.active) { const distSq = (player.worldX - coin.worldX)**2 + (player.worldY - coin.worldY)**2; if (distSq < (player.radius + coin.radius)**2) { coin.active = false; player.isBoosted = true; player.boostEndTime = time + 5000; } } }
         
-        // --- 변경: 빨강 코인 공격 횟수 스테이지 비례 증가 ---
         for (const coin of redCoins) { 
             if (coin.active) { 
                 const distSq = (player.worldX - coin.worldX)**2 + (player.worldY - coin.worldY)**2; 
@@ -337,8 +341,8 @@ window.onload = function() {
         player.controlsInverted = false;
         player.standingOnPlatform = null;
         player.isDead = false;
-        player.isInvincible = false; // --- 추가: 무적 상태 초기화 ---
-        player.invincibleEndTime = 0; // --- 추가: 무적 시간 초기화 ---
+        player.isInvincible = false;
+        player.invincibleEndTime = 0;
         jumpBufferTime = 0;
     }
     
@@ -531,7 +535,6 @@ window.onload = function() {
         ctx.restore();
     }
     
-    // --- 변경: 빨강 코인 공격 속도 스테이지 비례 증가 ---
     function updateAttackEvents(time) {
         for (let i = attackEvents.length - 1; i >= 0; i--) {
             const event = attackEvents[i];
@@ -539,7 +542,7 @@ window.onload = function() {
                 event.count--;
                 const baseInterval = 1500;
                 const speedUpFactor = 1 - (currentStage * 0.04);
-                const interval = Math.max(200, baseInterval * speedUpFactor); // 최소 간격 200ms
+                const interval = Math.max(200, baseInterval * speedUpFactor);
                 event.nextSpawnTime = time + interval;
 
                 hostileProjectiles.push({
@@ -586,13 +589,17 @@ window.onload = function() {
             p.worldY += p.dy;
             const distSqToPlayer = (player.worldX - p.worldX)**2 + (player.worldY - p.worldY)**2;
             
-            // --- 변경: 무적 상태일 때는 피격되지 않음 ---
             if (!player.isInvincible && !player.isDead && distSqToPlayer < (player.radius + p.radius)**2) {
                 player.isDead = true;
                 hostileProjectiles.splice(i, 1);
                 attackEvents = [];
                 screenFlash = { alpha: 1.0, color: 'rgba(255, 0, 0, 0.7)', duration: 300, startTime: time };
                 
+                // --- 추가: 사망 시 최종 진행률 기록 ---
+                const stageLength = portalTargetX - stageStartX;
+                const currentProgress = highestX - stageStartX;
+                lastProgress = stageLength > 0 ? Math.min(100, Math.max(0, (currentProgress / stageLength) * 100)) : 0;
+
                 createExplosion(player.worldX - camera.x, player.worldY - camera.y, 0); 
                 setTimeout(() => {
                     init(currentStage, false);
@@ -626,7 +633,6 @@ window.onload = function() {
         const screenY = viewHeight / 2;
         ctx.save();
 
-        // --- 추가: 무적 상태일 때 보호막 표시 ---
         if (player.isInvincible) {
             const pulseAlpha = 0.4 + (Math.sin(time / 200) + 1) * 0.2;
             ctx.fillStyle = `rgba(255, 255, 255, ${pulseAlpha})`;
@@ -670,6 +676,7 @@ window.onload = function() {
     function clearGame() {
         if(gameCleared) return; 
         gameCleared = true; 
+        lastProgress = 0; // --- 추가: 클리어 시 진행률 초기화 ---
         const nextStage = currentStage + 1;
         const savedHighestStage = parseInt(localStorage.getItem('highestStage')) || 1;
         if (nextStage > savedHighestStage) {
@@ -780,14 +787,25 @@ window.onload = function() {
 
     function drawProgressUI() {
         const stageLength = portalTargetX - stageStartX;
-        const currentProgress = player.worldX - stageStartX;
-        const progressPercent = stageLength > 0 ? Math.min(100, Math.max(0, (currentProgress / stageLength) * 100)) : 0;
+        let progressPercent = 0;
+        let textColor = 'rgba(255, 255, 255, 0.9)';
+
+        if (player.isDead) {
+            // 죽었을 때는 저장된 마지막 진행률을 빨간색으로 표시
+            progressPercent = lastProgress;
+            textColor = 'rgba(255, 100, 100, 0.9)';
+        } else {
+            // 살아있을 때는 실시간 진행률을 흰색으로 표시
+            const currentProgress = player.worldX - stageStartX;
+            progressPercent = stageLength > 0 ? Math.min(100, Math.max(0, (currentProgress / stageLength) * 100)) : 0;
+        }
+
         const progressText = `${progressPercent.toFixed(1)}%`;
         
         ctx.font = 'bold 20px sans-serif';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.fillStyle = textColor;
         ctx.strokeStyle = 'rgba(0, 0, 0, 0.7)';
         ctx.lineWidth = 4;
         
@@ -1013,6 +1031,7 @@ window.onload = function() {
     }
 
     function resetGame() {
+        lastProgress = 0; // --- 추가: 게임 리셋 시 저장된 진행률 초기화 ---
         localStorage.removeItem('highestStage');
         init(1, true);
     }
@@ -1039,11 +1058,12 @@ window.onload = function() {
         
         if (isFullReset) {
             currentMapSeed = Date.now() + Math.random();
+            lastProgress = 0; // 새 게임 시작 시 진행률 초기화
         }
         
         resetPlayer();
-        player.isInvincible = true; // --- 추가: 무적 상태 시작 ---
-        player.invincibleEndTime = Date.now() + 3000; // --- 추가: 무적 시간 3초 설정 ---
+        player.isInvincible = true;
+        player.invincibleEndTime = Date.now() + 3000;
 
         const startPlatformY = viewHeight - 100;
         const platforms = [];
