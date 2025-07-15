@@ -29,8 +29,7 @@ window.onload = function() {
     const COIN_TYPES = ['ice', 'rainbow', 'red', 'invert'];
     
     const MIN_COIN_SPEED = 6;
-    const COIN_SPAWN_PADDING = 100;
-
+    
     const player = {
         worldX: 200, worldY: 0, dx: 0, dy: 0, radius: 24, onGround: false,
         rotationAngle: 0, initialX: 200, initialY: 0,
@@ -56,6 +55,7 @@ window.onload = function() {
     let spawnCheckTimer = null; 
     let highestX = 0; 
     let currentMapSeed = 0;
+    let portalTargetX = 0;
 
     let currentStage = 1; 
     let gameCleared = false; 
@@ -564,6 +564,7 @@ window.onload = function() {
                 hostileProjectiles.splice(i, 1);
                 attackEvents = [];
                 screenFlash = { alpha: 1.0, color: 'rgba(255, 0, 0, 0.7)', duration: 300, startTime: time };
+                
                 createExplosion(player.worldX - camera.x, player.worldY - camera.y, 0); 
                 setTimeout(() => {
                     init(currentStage, false);
@@ -740,6 +741,22 @@ window.onload = function() {
         ctx.fillText('STAGE ' + currentStage, cX, cY);
     }
 
+    // --- 추가: 좌측 상단 진행률 UI 그리기 ---
+    function drawProgressUI() {
+        const progress = Math.min(100, (player.worldX / portalTargetX) * 100);
+        const progressText = `${Math.max(0, progress).toFixed(1)}%`;
+        
+        ctx.font = 'bold 20px sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.7)';
+        ctx.lineWidth = 4;
+        
+        ctx.strokeText(progressText, 20, 20);
+        ctx.fillText(progressText, 20, 20);
+    }
+
     function drawResetButton() {
         const r = resetButton;
         ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
@@ -870,6 +887,7 @@ window.onload = function() {
             drawScreenEffects(time);
             drawControlButtons();
             drawStageUI();
+            drawProgressUI(); // --- 추가 ---
             drawResetButton();
         }
         
@@ -897,11 +915,12 @@ window.onload = function() {
 
         if (Math.random() < getCoinSpawnChance(currentStage)) {
             const coinTypeToSpawn = COIN_TYPES[Math.floor(Math.random() * COIN_TYPES.length)];
-            generateCoin(coinTypeToSpawn);
+            generateCoin(coinTypeToSpawn, true);
         }
     }
 
-    function generateCoin(type, spawnArea) {
+    // --- 변경: 코인 생성 위치 로직 수정 ---
+    function generateCoin(type, isDuringGame, spawnArea) {
         const stageSpeedMultiplier = 1 + (currentStage - 1) * 0.15;
         const baseSpeedX = 14;
         const baseSpeedY = 7; 
@@ -914,14 +933,41 @@ window.onload = function() {
             speed = Math.sqrt(dx * dx + dy * dy);
         } while (speed < MIN_COIN_SPEED || Math.abs(dx) < 1.5 || Math.abs(dy) < 1.5);
         
-        const spawnableWidth = (spawnArea ? spawnArea.width : viewWidth) - COIN_SPAWN_PADDING * 2;
-        const spawnableHeight = (spawnArea ? spawnArea.height : viewHeight) - COIN_SPAWN_PADDING * 2;
-        const spawnX = (spawnArea ? spawnArea.x : camera.x) + COIN_SPAWN_PADDING;
-        const spawnY = (spawnArea ? spawnArea.y : camera.y) + COIN_SPAWN_PADDING;
+        let spawnX, spawnY;
+
+        if(isDuringGame) {
+            // 게임 중일 때: 화면 중심부를 피해 4분면 중 한 곳에 생성
+            const quadrant = Math.floor(Math.random() * 4);
+            const halfWidth = viewWidth / 2;
+            const halfHeight = viewHeight / 2;
+
+            switch(quadrant) {
+                case 0: // 좌상
+                    spawnX = camera.x + Math.random() * (halfWidth - 50);
+                    spawnY = camera.y + Math.random() * (halfHeight - 50);
+                    break;
+                case 1: // 우상
+                    spawnX = camera.x + halfWidth + 50 + Math.random() * (halfWidth - 50);
+                    spawnY = camera.y + Math.random() * (halfHeight - 50);
+                    break;
+                case 2: // 좌하
+                    spawnX = camera.x + Math.random() * (halfWidth - 50);
+                    spawnY = camera.y + halfHeight + 50 + Math.random() * (halfHeight - 50);
+                    break;
+                case 3: // 우하
+                    spawnX = camera.x + halfWidth + 50 + Math.random() * (halfWidth - 50);
+                    spawnY = camera.y + halfHeight + 50 + Math.random() * (halfHeight - 50);
+                    break;
+            }
+        } else {
+             // 스테이지 시작 시: 플레이어 주변에 생성
+            spawnX = spawnArea.x + Math.random() * spawnArea.width;
+            spawnY = spawnArea.y + Math.random() * spawnArea.height;
+        }
+
 
         const newCoin = {
-            worldX: spawnX + Math.random() * spawnableWidth,
-            worldY: spawnY + Math.random() * spawnableHeight,
+            worldX: spawnX, worldY: spawnY,
             radius: 15, active: true, dx: dx, dy: dy,
         };
 
@@ -954,7 +1000,6 @@ window.onload = function() {
         attackEvents = [];
         screenFlash = { alpha: 0 };
         
-        // --- 변경: 코인 초기화를 항상 실행 ---
         iceCoins = []; rainbowCoins = []; redCoins = []; invertCoins = [];
         
         if (isFullReset) {
@@ -963,24 +1008,6 @@ window.onload = function() {
         
         resetPlayer();
 
-        // --- 추가: 시작 시 코인 생성 ---
-        const initialCoinCount = Math.max(0, currentStage - 4);
-        if (initialCoinCount > 0) {
-            const initialSpawnArea = {
-                x: player.initialX - viewWidth / 2,
-                y: player.initialY - viewHeight / 2,
-                width: viewWidth,
-                height: viewHeight
-            };
-            for (let i = 0; i < initialCoinCount; i++) {
-                const type = COIN_TYPES[Math.floor(Math.random() * COIN_TYPES.length)];
-                generateCoin(type, initialSpawnArea);
-            }
-        }
-
-        if (!spawnCheckTimer) {
-            spawnCheckTimer = setInterval(spawnManager, SPAWN_CHECK_INTERVAL);
-        }
         const startPlatformY = viewHeight - 100;
         const platforms = [];
         let currentX = -200; let prevY = startPlatformY;
@@ -1035,8 +1062,27 @@ window.onload = function() {
         const portalX = currentX + MAX_X_GAP_BASE + 100;
         const portalHeight = 300; const portalWidth = 120;
         portal = { worldX: portalX, worldY: prevY - portalHeight / 2, width: portalWidth, height: portalHeight, isPhysical: false };
+        portalTargetX = portal.worldX;
         worldObjects = [ { worldX: -100000, worldY: -10000, width: 200000, height: 20000, isPhysical: false }, ...platforms ];
         createPortalAssets();
+
+        const initialCoinCount = Math.max(0, currentStage - 4);
+        if (initialCoinCount > 0) {
+            const initialSpawnArea = {
+                x: player.initialX,
+                y: player.initialY - viewHeight / 2,
+                width: viewWidth,
+                height: viewHeight
+            };
+            for (let i = 0; i < initialCoinCount; i++) {
+                const type = COIN_TYPES[Math.floor(Math.random() * COIN_TYPES.length)];
+                generateCoin(type, false, initialSpawnArea);
+            }
+        }
+        
+        if (!spawnCheckTimer) {
+            spawnCheckTimer = setInterval(spawnManager, SPAWN_CHECK_INTERVAL);
+        }
     }
     
     createPlayerTexture();
