@@ -56,7 +56,7 @@ window.onload = function() {
     let highestX = 0; 
     let currentMapSeed = 0;
     let portalTargetX = 0;
-    let stageStartX = 0; // --- 추가: 스테이지 시작 X 좌표 저장 ---
+    let stageStartX = 0;
 
     let currentStage = 1; 
     let gameCleared = false; 
@@ -745,7 +745,8 @@ window.onload = function() {
     function drawProgressUI() {
         const stageLength = portalTargetX - stageStartX;
         const currentProgress = player.worldX - stageStartX;
-        const progressPercent = Math.min(100, Math.max(0, (currentProgress / stageLength) * 100));
+        // stageLength가 0이면 0으로 처리 (오류 방지)
+        const progressPercent = stageLength > 0 ? Math.min(100, Math.max(0, (currentProgress / stageLength) * 100)) : 0;
         const progressText = `${progressPercent.toFixed(1)}%`;
         
         ctx.font = 'bold 20px sans-serif';
@@ -940,7 +941,7 @@ window.onload = function() {
             const quadrant = Math.floor(Math.random() * 4);
             const halfWidth = viewWidth / 2;
             const halfHeight = viewHeight / 2;
-            const padding = 50; // 중심부에서 얼마나 떨어져 생성할지
+            const padding = 50;
 
             switch(quadrant) {
                 case 0: // 좌상
@@ -1010,13 +1011,16 @@ window.onload = function() {
         const startPlatformY = viewHeight - 100;
         const platforms = [];
         let currentX = -200; 
-        stageStartX = currentX; // --- 추가: 스테이지 시작점 저장 ---
         let prevY = startPlatformY;
         const startPlatformSegmentWidth = 100; const startPlatformSegmentHeight = startPlatformSegmentWidth / 1.7;
         for (let i = 0; i < 10; i++) {
             platforms.push({ worldX: currentX, worldY: prevY, width: startPlatformSegmentWidth, height: startPlatformSegmentHeight, isPhysical: true, initialY: prevY });
             currentX += startPlatformSegmentWidth;
         }
+        
+        // --- 변경: 시작 발판의 '오른쪽 끝'을 0% 기준으로 설정 ---
+        stageStartX = currentX - startPlatformSegmentWidth;
+        
         player.initialX = 150; player.initialY = startPlatformY - 150;
         player.worldX = player.initialX; player.worldY = player.initialY;
         const seededRandom = createSeededRandom(currentMapSeed);
