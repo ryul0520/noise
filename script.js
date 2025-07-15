@@ -25,11 +25,9 @@ window.onload = function() {
     const STAGE_RESET_DELAY = 3000;
     
     const SPAWN_CHECK_INTERVAL = 4000;
-    const MAX_ICE_COINS = 3;
-    const MAX_RAINBOW_COINS = 1;
-    const MAX_RED_COINS = 2;
-    const MAX_GAMBLE_COINS = 2;
+    // --- 변경: 개별 코인 최대 개수 삭제, 통합 관리로 변경 ---
     const RAINBOW_PLATFORM_CHANCE = 0.0375;
+    const COIN_TYPES = ['ice', 'rainbow', 'red', 'invert']; // 생성 가능한 코인 종류 목록
 
     const player = {
         worldX: 200, worldY: 0, dx: 0, dy: 0, radius: 24, onGround: false,
@@ -50,7 +48,7 @@ window.onload = function() {
     let iceCoins = []; 
     let rainbowCoins = [];
     let redCoins = [];
-    let gambleCoins = [];
+    let invertCoins = []; // --- 변경: gambleCoins -> invertCoins ---
     let hostileProjectiles = [];
     let attackEvents = [];
     let spawnCheckTimer = null; 
@@ -281,24 +279,14 @@ window.onload = function() {
         for (const coin of rainbowCoins) { if (coin.active) { const distSq = (player.worldX - coin.worldX)**2 + (player.worldY - coin.worldY)**2; if (distSq < (player.radius + coin.radius)**2) { coin.active = false; player.isBoosted = true; player.boostEndTime = time + 5000; } } }
         for (const coin of redCoins) { if (coin.active) { const distSq = (player.worldX - coin.worldX)**2 + (player.worldY - coin.worldY)**2; if (distSq < (player.radius + coin.radius)**2) { coin.active = false; attackEvents.push({ count: 10, nextSpawnTime: time }); } } }
         
-        for (const coin of gambleCoins) {
+        // --- 변경: 랜덤코인(gamble) -> 좌우반전(invert) 코인으로 변경 ---
+        for (const coin of invertCoins) {
             if (coin.active) {
                 const distSq = (player.worldX - coin.worldX)**2 + (player.worldY - coin.worldY)**2;
                 if (distSq < (player.radius + coin.radius)**2) {
                     coin.active = false;
-                    const effectRoll = Math.random();
-                    if (effectRoll < 0.75) { // 75%
-                        // 컨트롤 반전 효과
-                        player.controlsInverted = true;
-                        player.invertEndTime = time + 5000;
-                    } else { // 25%
-                        // 모든 코인 제거 효과
-                        iceCoins.forEach(c => c.active = false);
-                        rainbowCoins.forEach(c => c.active = false);
-                        redCoins.forEach(c => c.active = false);
-                        gambleCoins.forEach(c => c.active = false);
-                        createExplosion(player.worldX - camera.x + viewWidth / 2, player.worldY - camera.y + viewHeight/2, 60);
-                    }
+                    player.controlsInverted = true;
+                    player.invertEndTime = time + 5000;
                 }
             }
         }
@@ -423,7 +411,8 @@ window.onload = function() {
     }
 
     function updateCoins() {
-        [...iceCoins, ...rainbowCoins, ...redCoins, ...gambleCoins].forEach(coin => {
+        // --- 변경: 모든 코인 목록에 invertCoins 추가 ---
+        [...iceCoins, ...rainbowCoins, ...redCoins, ...invertCoins].forEach(coin => {
             if (coin.active) {
                 coin.worldX += coin.dx;
                 coin.worldY += coin.dy;
@@ -490,22 +479,37 @@ window.onload = function() {
                 ctx.stroke();
             }
         }); 
-        gambleCoins.forEach(coin => {
+
+        // --- 변경: gambleCoins -> invertCoins 그리기 로직으로 변경 ---
+        invertCoins.forEach(coin => {
             if(coin.active) {
                 const screenX = coin.worldX - camera.x;
                 const screenY = coin.worldY - camera.y;
-                ctx.fillStyle = 'white';
-                ctx.strokeStyle = '#888';
+                ctx.fillStyle = '#9400D3'; // 보라색
+                ctx.strokeStyle = 'white';
                 ctx.lineWidth = 3;
                 ctx.beginPath();
                 ctx.arc(screenX, screenY, coin.radius, 0, Math.PI*2);
                 ctx.fill();
                 ctx.stroke();
-                ctx.fillStyle = 'black';
-                ctx.font = 'bold 20px sans-serif';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                ctx.fillText('?', screenX, screenY);
+                
+                // 화살표 그리기
+                ctx.fillStyle = 'white';
+                const arrowSize = coin.radius * 0.5;
+                // 왼쪽 화살표
+                ctx.beginPath();
+                ctx.moveTo(screenX - arrowSize * 0.2, screenY);
+                ctx.lineTo(screenX, screenY - arrowSize / 2);
+                ctx.lineTo(screenX, screenY + arrowSize / 2);
+                ctx.closePath();
+                ctx.fill();
+                // 오른쪽 화살표
+                ctx.beginPath();
+                ctx.moveTo(screenX + arrowSize * 0.2, screenY);
+                ctx.lineTo(screenX, screenY - arrowSize / 2);
+                ctx.lineTo(screenX, screenY + arrowSize / 2);
+                ctx.closePath();
+                ctx.fill();
             }
         });
         ctx.restore();
@@ -843,29 +847,35 @@ window.onload = function() {
         requestAnimationFrame(animate);
     }
     
+    // --- 추가: 스테이지별 코인 스폰 확률 계산 함수 ---
+    function getCoinSpawnChance(stage) {
+        if (stage <= 1) return 0; // 스테이지 1에서는 스폰 안됨
+        const baseChance = 0.20; // 스테이지 2에서의 기본 확률
+        const incrementPerStage = 0.05; // 스테이지당 증가 확률
+        const maxChance = 0.80; // 최대 확률
+        return Math.min(maxChance, baseChance + (stage - 2) * incrementPerStage);
+    }
+    
+    // --- 변경: 코인 스폰 관리 로직 전체 수정 ---
     function spawnManager() {
-        if (currentStage >= 1 && rainbowCoins.filter(c => c.active).length < MAX_RAINBOW_COINS) {
-            if (Math.random() < 0.05) {
-                generateCoin('rainbow');
-            }
+        // 1. 현재 활성화된 모든 코인의 개수를 센다.
+        const totalActiveCoins = [
+            ...iceCoins, ...rainbowCoins, ...redCoins, ...invertCoins
+        ].filter(c => c.active).length;
+
+        // 2. 현재 스테이지에서 허용되는 최대 코인 개수를 계산한다.
+        const maxCoinsForStage = Math.max(0, currentStage - 1);
+
+        // 3. 최대 개수에 도달했으면 아무것도 하지 않는다.
+        if (totalActiveCoins >= maxCoinsForStage) {
+            return;
         }
-        if (currentStage >= 3 && iceCoins.filter(c => c.active).length < MAX_ICE_COINS) {
-            const chance = Math.min(0.5, 0.10 + (currentStage - 3) * 0.02);
-            if (Math.random() < chance) {
-                generateCoin('ice');
-            }
-        }
-        if (currentStage >= 5 && redCoins.filter(c => c.active).length < MAX_RED_COINS) {
-            const chance = Math.min(0.6, 0.15 + (currentStage - 5) * 0.025);
-            if (Math.random() < chance) {
-                generateCoin('red');
-            }
-        }
-        if (currentStage >= 5 && gambleCoins.filter(c => c.active).length < MAX_GAMBLE_COINS) {
-            const chance = Math.min(0.5, 0.10 + (currentStage - 3) * 0.02);
-            if (Math.random() < chance) {
-                generateCoin('gamble');
-            }
+
+        // 4. 스테이지에 따른 스폰 확률로 코인을 생성할지 결정한다.
+        if (Math.random() < getCoinSpawnChance(currentStage)) {
+            // 5. 어떤 종류의 코인을 생성할지 무작위로 결정한다.
+            const coinTypeToSpawn = COIN_TYPES[Math.floor(Math.random() * COIN_TYPES.length)];
+            generateCoin(coinTypeToSpawn);
         }
     }
 
@@ -884,7 +894,7 @@ window.onload = function() {
         if (type === 'ice') iceCoins.push(newCoin);
         else if (type === 'rainbow') rainbowCoins.push(newCoin);
         else if (type === 'red') redCoins.push(newCoin);
-        else if (type === 'gamble') gambleCoins.push(newCoin);
+        else if (type === 'invert') invertCoins.push(newCoin); // --- 변경: gamble -> invert
     }
 
     function resetGame() {
@@ -910,7 +920,8 @@ window.onload = function() {
         attackEvents = [];
         if (isFullReset) {
             currentMapSeed = Date.now() + Math.random();
-            iceCoins = []; rainbowCoins = []; redCoins = []; gambleCoins = [];
+            // --- 변경: 모든 코인 배열 초기화 ---
+            iceCoins = []; rainbowCoins = []; redCoins = []; invertCoins = [];
         }
         resetPlayer();
         if (!spawnCheckTimer) {
@@ -932,8 +943,10 @@ window.onload = function() {
         const MIN_X_GAP_BASE = 110 + s * 10;
         const MAX_X_GAP_BASE = 160 + s * 15;
         const MAX_Y_CHANGE = 40 + s * 10;
-        const platformMaxWidth = Math.max(80, 200 - s * 10);
-        const platformMinWidth = Math.max(60, 100 - s * 5);
+        
+        const platformMaxWidth = Math.max(70, 170 - s * 10);
+        const platformMinWidth = Math.max(50, 80 - s * 5);
+
         let previousPlatformWasRainbow = false;
         let makeNextPlatformWider = false;
         for (let i = 0; i < platformCount; i++) {
@@ -945,7 +958,9 @@ window.onload = function() {
                 previousPlatformWasRainbow = false;
             }
             const xGap = MIN_X_GAP + seededRandom() * (MAX_X_GAP - MIN_X_GAP);
-            const yChange = (seededRandom() - 0.45) * 2 * MAX_Y_CHANGE;
+            
+            const yChange = (seededRandom() - 0.5) * 2 * MAX_Y_CHANGE;
+
             let pW = platformMinWidth + seededRandom() * (platformMaxWidth - platformMinWidth);
             if (makeNextPlatformWider) {
                 pW = Math.min(pW * 1.5, platformMaxWidth * 1.2);
